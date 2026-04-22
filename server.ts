@@ -14,18 +14,49 @@ async function startServer() {
     const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
     
     try {
-      console.log('Proxying request to Google Sheets...');
-      const response = await fetch(SHEET_URL);
+      console.log('Proxying request to Google Sheets:', SHEET_URL);
+      const response = await fetch(SHEET_URL, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Vite-Proxy-Server)'
+        },
+        redirect: 'follow'
+      });
       
+      const contentType = response.headers.get('content-type');
+      const text = await response.text();
+
       if (!response.ok) {
-        throw new Error(`Google Sheets responded with status: ${response.status}`);
+        console.error(`Google Sheets Error: ${response.status} ${response.statusText}`);
+        return res.status(response.status).json({ 
+          error: 'Google Sheets returned an error', 
+          status: response.status,
+          details: text.substring(0, 200)
+        });
       }
-      
-      const data = await response.json();
-      res.json(data);
+
+      if (contentType && contentType.includes('text/html')) {
+        console.error('Received HTML instead of JSON. Likely a login or error page.');
+        return res.status(502).json({ 
+          error: 'Received HTML instead of JSON. Please ensure the Google Apps Script is deployed as "Anyone, even anonymous".',
+          snippet: text.substring(0, 300)
+        });
+      }
+
+      try {
+        const data = JSON.parse(text);
+        res.json(data);
+      } catch (parseError) {
+        console.error('Failed to parse JSON response:', parseError);
+        res.status(502).json({ 
+          error: 'Malformed JSON response from Google Sheets', 
+          snippet: text.substring(0, 100) 
+        });
+      }
     } catch (error: any) {
-      console.error('Proxy error:', error);
-      res.status(500).json({ error: 'Failed to fetch data from Google Sheets', details: error.message });
+      console.error('Proxy network error:', error);
+      res.status(500).json({ error: 'Network error connecting to Google Sheets', details: error.message });
     }
   });
 

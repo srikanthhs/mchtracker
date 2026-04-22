@@ -42,6 +42,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(localStorage.getItem('hrp_last_sync'));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -159,7 +160,7 @@ export default function App() {
   };
 
   // Handle Sheet Sync
-  const handleSheetSync = async () => {
+  const handleSheetSync = async (silent = false) => {
     if (!currentUser || syncing) return;
     setSyncing(true);
     try {
@@ -177,14 +178,38 @@ export default function App() {
           importedCount++;
         }
       }
-      alert(`Sync Complete: Successfully processed ${importedCount} records from Google Sheets.`);
+      
+      const now = new Date().toLocaleTimeString();
+      setLastSynced(now);
+      localStorage.setItem('hrp_last_sync', now);
+      
+      if (!silent) {
+        alert(`Sync Complete: Successfully processed ${importedCount} records from Google Sheets.`);
+      }
     } catch (err: any) {
-      alert('Sync failed: Check console for Details. Note: Scripts often error if not publicly shared with CORS headers.');
+      if (!silent) {
+        alert('Sync failed: Check console for Details (likely CORS or Permissions).');
+      }
       console.error(err);
     } finally {
       setSyncing(false);
     }
   };
+
+  // 3. Auto-sync Effect
+  useEffect(() => {
+    if (!currentUser || !authReady) return;
+    
+    // Auto sync on mount
+    handleSheetSync(true);
+    
+    // Set interval for every 10 minutes
+    const interval = setInterval(() => {
+      handleSheetSync(true);
+    }, 10 * 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [currentUser, authReady]);
 
   // Generate Insights
   const handleShowAI = async () => {
@@ -326,6 +351,18 @@ export default function App() {
                </form>
              </div>
            )}
+           
+           <div className="mb-4 flex items-center justify-between px-1">
+             <div className="flex items-center gap-2">
+               <div className={cn("w-2 h-2 rounded-full", syncing ? "bg-indigo-500 animate-pulse" : "bg-emerald-500")} />
+               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                 {syncing ? 'Syncing with Google Sheets...' : `Cloud Balanced (Last: ${lastSynced || 'N/A'})`}
+               </span>
+             </div>
+             <div className="text-[10px] text-slate-300 font-medium">
+               Auto-sync every 10 min
+             </div>
+           </div>
            
            <PatientTable 
              data={filteredPatients}
