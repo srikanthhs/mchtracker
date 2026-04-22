@@ -9,6 +9,11 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
+
   // Proxy route for Google Sheets to bypass CORS
   app.get('/api/sheet-data', async (req, res) => {
     const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
@@ -37,6 +42,16 @@ async function startServer() {
       }
 
       if (contentType && contentType.includes('text/html')) {
+        // Detect specific Google Script errors in the HTML body
+        const scriptErrorMatch = text.match(/<div[^>]*>(TypeError: [^<]+)<\/div>/);
+        if (scriptErrorMatch) {
+          return res.status(502).json({ 
+            error: 'Google Apps Script Runtime Error',
+            details: scriptErrorMatch[1],
+            suggestedFix: 'Your script is crashing. Ensure it is linked to a spreadsheet and the sheet ID is correct.'
+          });
+        }
+
         console.error('Received HTML instead of JSON. Likely a login or error page.');
         return res.status(502).json({ 
           error: 'Received HTML instead of JSON. Please ensure the Google Apps Script is deployed as "Anyone, even anonymous".',

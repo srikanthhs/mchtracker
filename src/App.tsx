@@ -197,7 +197,8 @@ export default function App() {
     } catch (err: any) {
       if (!silent) {
         const msg = err.message || 'Unknown Error';
-        alert(`Sync Failed!\n\n${msg}\n\nPlease check the browser console for details.`);
+        const sub = err.details || 'Please check the browser console for details.';
+        alert(`Sync Failed!\n\nIssue: ${msg}\nDetails: ${sub}`);
       }
       console.error('Sheet Sync Error:', err);
     } finally {
