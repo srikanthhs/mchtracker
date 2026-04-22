@@ -111,7 +111,7 @@ export default function App() {
       snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as PatientRecord));
       
       if (data.length === 0) {
-        setPatients(DEMO_DATA);
+        setPatients([]);
       } else {
         setPatients(data);
       }
@@ -164,18 +164,26 @@ export default function App() {
     if (!currentUser || syncing) return;
     setSyncing(true);
     try {
+      console.log('Fetching raw sheet data...');
       const rawData = await fetchSheetData();
+      console.log(`Received ${rawData.length} rows from Sheets.`);
+      
       let importedCount = 0;
+      let skippedCount = 0;
 
-      for (const raw of rawData) {
+      for (const [index, raw] of rawData.entries()) {
         const patient = mapSheetToPatient(raw);
-        if (patient.n && patient.b) {
-          const id = patient.id || `${patient.n}-${patient.b}`.replace(/\s+/g, '-').toLowerCase();
+        
+        // Ensure we have at least a Name and Block to create a record
+        if (patient.n && patient.n !== 'Unknown' && patient.b) {
+          const id = patient.id || `${patient.n}-${patient.b}-${index}`.replace(/\s+/g, '-').toLowerCase();
           await setDoc(doc(db, 'patients', id), {
             ...patient,
             updatedAt: new Date().toISOString()
           }, { merge: true });
           importedCount++;
+        } else {
+          skippedCount++;
         }
       }
       
@@ -184,13 +192,14 @@ export default function App() {
       localStorage.setItem('hrp_last_sync', now);
       
       if (!silent) {
-        alert(`Sync Complete: Successfully processed ${importedCount} records from Google Sheets.`);
+        alert(`Sync Complete!\n\u2705 Processed: ${importedCount}\n\u26A0\uFE0F Skipped (Incomplete Data): ${skippedCount}`);
       }
     } catch (err: any) {
       if (!silent) {
-        alert('Sync failed: Check console for Details (likely CORS or Permissions).');
+        const msg = err.message || 'Unknown Error';
+        alert(`Sync Failed!\n\n${msg}\n\nPlease check the browser console for details.`);
       }
-      console.error(err);
+      console.error('Sheet Sync Error:', err);
     } finally {
       setSyncing(false);
     }

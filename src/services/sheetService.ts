@@ -17,25 +17,41 @@ export async function fetchSheetData(): Promise<any[]> {
 }
 
 /**
- * Maps raw sheet data to the PatientRecord format.
- * Adjust this if the sheet column names differ from our schema.
+ * Maps raw sheet data to the PatientRecord format using fuzzy key matching.
+ * Handles common variations like "Mother Name", "mother_name", "MotherName", etc.
  */
 export function mapSheetToPatient(raw: any): Partial<PatientRecord> {
+  // Helper to find value from any potential key variant
+  const getVal = (variants: string[]) => {
+    for (const v of variants) {
+      const lowerV = v.toLowerCase().replace(/[\s_]/g, '');
+      for (const [key, val] of Object.entries(raw)) {
+        const normalizedKey = key.toLowerCase().replace(/[\s_]/g, '');
+        if (normalizedKey === lowerV) return val;
+      }
+    }
+    return undefined;
+  };
+
   return {
-    id: String(raw.PICME || raw.id || ''),
-    n: raw.MotherName || raw.n || 'Unknown',
-    hu: raw.HusbandName || raw.hu || '',
-    b: raw.Block || raw.b || '',
-    p: raw.PHC || raw.p || '',
-    h: raw.HSC || raw.h || '',
-    e: raw.EDD || raw.e || '',
-    a: Number(raw.Age || raw.a) || null,
-    ph: String(raw.Phone || raw.ph || ''),
-    g: String(raw.Gravida || raw.g || ''),
-    pa: String(raw.Para || raw.pa || ''),
-    r: Array.isArray(raw.RiskFlags) ? raw.RiskFlags : (typeof raw.r === 'string' ? raw.r.split(',').map((s: string) => s.trim()) : []),
-    pp: raw.PlannedPlace || raw.pp || '',
-    rm: raw.Remarks || raw.rm || '',
-    ds: raw.DeliveryStatus || raw.ds || ''
+    id: String(getVal(['PICME', 'PICMENo', 'id']) || ''),
+    n: String(getVal(['MotherName', 'Mother Name', 'Name', 'n']) || 'Unknown'),
+    hu: String(getVal(['HusbandName', 'Husband Name', 'hu']) || ''),
+    b: String(getVal(['Block', 'b']) || ''),
+    p: String(getVal(['PHC', 'p']) || ''),
+    h: String(getVal(['HSC', 'h']) || ''),
+    e: String(getVal(['EDD', 'EDDDate', 'e']) || ''),
+    a: Number(getVal(['Age', 'a'])) || null,
+    ph: String(getVal(['Phone', 'Contact', 'Mobile', 'ph']) || ''),
+    g: String(getVal(['Gravida', 'g']) || ''),
+    pa: String(getVal(['Para', 'pa']) || ''),
+    r: Array.isArray(raw.RiskFlags || raw.RiskFactors || raw.r) 
+      ? (raw.RiskFlags || raw.RiskFactors || raw.r)
+      : (typeof (raw.r || raw.RiskFactors) === 'string' 
+          ? (raw.r || raw.RiskFactors).split(',').map((s: string) => s.trim()) 
+          : []),
+    pp: String(getVal(['PlannedPlace', 'Planned Place', 'pp']) || ''),
+    rm: String(getVal(['Remarks', 'Notes', 'rm']) || ''),
+    ds: String(getVal(['DeliveryStatus', 'Status', 'ds']) || '')
   };
 }
