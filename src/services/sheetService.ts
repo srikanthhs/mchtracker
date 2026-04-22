@@ -1,6 +1,6 @@
 import { PatientRecord } from '../types';
 
-const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
+const SHEET_URL = '/api/sheet-data';
 
 export async function fetchSheetData(): Promise<any[]> {
   try {
