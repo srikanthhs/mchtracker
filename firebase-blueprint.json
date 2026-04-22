@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "patient": {
+      "title": "HRP Patient",
+      "description": "Information about a high-risk pregnancy patient.",
+      "type": "object",
+      "properties": {
+        "b": { "type": "string", "description": "Block name" },
+        "p": { "type": "string", "description": "PHC name" },
+        "h": { "type": "string", "description": "HSC name" },
+        "id": { "type": "string", "description": "PICME Number" },
+        "n": { "type": "string", "description": "Mother Name" },
+        "hu": { "type": "string", "description": "Husband Name" },
+        "e": { "type": "string", "format": "date", "description": "EDD" },
+        "a": { "type": "integer", "description": "Age" },
+        "ph": { "type": "string", "description": "Phone Number" },
+        "g": { "type": "string", "description": "Gravida" },
+        "pa": { "type": "string", "description": "Para" },
+        "r": { "type": "array", "items": { "type": "string" }, "description": "Risk flags" },
+        "pp": { "type": "string", "description": "Planned Place of Delivery" },
+        "pt": { "type": "string", "description": "Planned Place Type" },
+        "pd": { "type": "string", "description": "Actual Place of Delivery" },
+        "lv": { "type": "string", "format": "date", "description": "Last Visit Date" },
+        "rm": { "type": "string", "description": "Remarks" },
+        "as": { "type": "string", "description": "Admission Status" },
+        "ds": { "type": "string", "description": "Delivery Status" },
+        "dd": { "type": "string", "format": "date", "description": "Date of Delivery" },
+        "fp": { "type": "string", "description": "Family Planning Status" },
+        "mo": { "type": "string", "description": "Mentor OG" },
+        "mop": { "type": "string", "description": "Mentor Opinion" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["n", "b", "p"]
+    },
+    "user": {
+      "title": "App User",
+      "description": "Role-based access control user.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "dph_officer", "bdo", "viewer"] },
+        "block": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "role", "active"]
+    },
+    "alert_schedule": {
+        "title": "Scheduled Alert",
+        "description": "A scheduled message alert for patients.",
+        "type": "object",
+        "properties": {
+            "type": { "type": "string" },
+            "date": { "type": "string", "format": "date" },
+            "block": { "type": "string" },
+            "risk": { "type": "string" },
+            "fired": { "type": "boolean" },
+            "firedAt": { "type": "string", "format": "date-time" }
+        }
+    },
+    "announcement": {
+      "title": "General Content / Announcement",
+      "description": "General broadcast messages for all users.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "content", "authorId"]
+    }
+  },
+  "firestore": {
+    "/patients/{patientId}": {
+      "schema": "patient",
+      "description": "Collection of HRP patients."
+    },
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "System users with roles."
+    },
+    "/alert_schedules/{scheduleId}": {
+        "schema": "alert_schedule",
+        "description": "Registry of scheduled SMS alerts."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "announcement",
+      "description": "General district announcements and news."
+    }
+  }
+}

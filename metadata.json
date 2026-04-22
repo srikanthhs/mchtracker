@@ -1,0 +1,6 @@
+{
+  "name": "HRP Tracker",
+  "description": "A high-risk pregnancy tracking system for health district management with AI-powered insights and role-based access control.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["firebase", "ai_insights", "responsive_design"]
+}

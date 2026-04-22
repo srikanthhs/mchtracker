@@ -1,0 +1,65 @@
+import { RiskCategory } from './types';
+
+export const RISK_WEIGHTS: Record<string, number> = {
+  "Active Tuberculosis (TB) in Pregnancy": 3,
+  "APH / Abruptio Placenta": 3,
+  "Auto Immune Diseases": 3,
+  "Acute Infections (Dengue/Malaria/Typhoid/Scrub Typhus)": 3,
+  "Diabetes Mellitus uncontrolled": 3,
+  "Ectopic Pregnancy ruptured": 3,
+  "Epilepsy (last episode within 3 months)": 3,
+  "GDM uncontrolled": 3,
+  "Heart Diseases Complicating Pregnancy": 3,
+  "PIH / Preeclampsia": 3,
+  "Severe Anaemia (< 7 gm)": 3,
+
+  "Diabetes Mellitus controlled": 2,
+  "Ectopic Pregnancy unruptured": 2,
+  "Epilepsy": 2,
+  "GDM controlled": 2,
+  "Hemoglobinopathy": 2,
+  "HIV / AIDS": 2,
+  "Renal Disease": 2,
+  "Abnormal Presentation": 2,
+  "Elderly Primi (>35 yrs)": 2,
+  "Hydramnios > 28 Weeks (Poly/Oligo)": 2,
+  "Moderate Anaemia (Hb 7 to 9 gm)": 2,
+  "Multipara (>= Gravida 4) / HOB": 2,
+  "Multiple Pregnancy": 2,
+  "Pregnancy after Prolonged Infertility": 2,
+  "Weight Below 40 kg": 2,
+  "Hyperthyroidism": 2,
+  "IVF": 2,
+
+  "CPD": 1,
+  "Congenital Malformation": 1,
+  "IUGR": 1,
+  "Malpresentation": 1,
+  "Previous Bad Obstetric History (BOH)": 1,
+  "Previous LSCS / Assisted": 1,
+  "Short Primi (Height < 145 cm)": 1,
+  "Teenage Pregnancy (< 19 years)": 1,
+  "Weight Above 70 Kg": 1,
+  "Differently Abled Mother": 1,
+  "Hypothyroidism": 1,
+  "Post Dated Pregnancy": 1,
+  "Pregnancy due to Contraceptive Failure": 1,
+  "Rh Isoimmunization": 1,
+  "Hepatitis B": 1,
+};
+
+export const RISK_CATS: RiskCategory[] = [
+  { label: "Critical", min: 5, color: "#C5221F", bg: "#FCE8E6", bd: "#F28B82", cls: "risk-crit" },
+  { label: "High", min: 3, color: "#E37400", bg: "#FEF7E0", bd: "#FBBC04", cls: "risk-high" },
+  { label: "Moderate", min: 2, color: "#188038", bg: "#E6F4EA", bd: "#34A853", cls: "risk-mod" },
+  { label: "Low", min: 1, color: "#4f46e5", bg: "#f5f3ff", bd: "#c7d2fe", cls: "risk-low" },
+  { label: "No Flag", min: 0, color: "#64748b", bg: "#f8fafc", bd: "#e2e8f0", cls: "risk-none" },
+];
+
+export const MSG_ALERTS = [
+  { days: 7, type: 'urgent', label: 'Urgent — 7 Days', icon: 'AlertTriangle', color: '#C5221F', bg: '#FCE8E6', bd: '#F28B82', window: 1 },
+  { days: 15, type: 'admission', label: 'Admission — 15 Days', icon: 'Hospital', color: '#C5221F', bg: '#FCE8E6', bd: '#F28B82', window: 2 },
+  { days: 30, type: 'followup', label: 'Follow-up — 30 Days', icon: 'CalendarDays', color: '#E37400', bg: '#FEF7E0', bd: '#FBBC04', window: 2 },
+  { days: 45, type: 'followup', label: 'Follow-up — 45 Days', icon: 'Calendar', color: '#188038', bg: '#E6F4EA', bd: '#34A853', window: 3 },
+  { days: 0, type: 'custom', label: 'Custom Send', icon: 'Settings2', color: '#4f46e5', bg: '#f5f3ff', bd: '#4f46e5', window: null },
+];
