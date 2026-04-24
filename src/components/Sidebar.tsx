@@ -10,7 +10,11 @@ import {
   History, 
   ChevronRight, 
   Hospital,
-  Sparkles
+  Sparkles,
+  Cloud,
+  Database,
+  RefreshCw,
+  Clock
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,13 +28,17 @@ interface SidebarProps {
   onShowAI: () => void;
   onShowSched: () => void;
   collapsed: boolean;
+  dbStatus: 'online' | 'error' | 'syncing';
+  syncing: boolean;
+  lastSynced: string | null;
+  onSync: () => void;
   onClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   data, activeFilter, activeBlock, activePHC,
   onFilterChange, onBlockChange, onPHCChange, onShowAI, onShowSched,
-  collapsed, onClose
+  collapsed, dbStatus, syncing, lastSynced, onSync, onClose
 }) => {
   const [openBlocks, setOpenBlocks] = useState<string[]>([]);
 
@@ -152,6 +160,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
           ))}
+        </div>
+
+        <div className="mt-auto p-4 border-t border-gray-100 bg-gray-50/50 space-y-3">
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mb-1">
+            <Cloud size={12} /> Cloud Subscriptions
+          </div>
+          
+          <div className="space-y-2">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <div className={cn(
+                     "w-1.5 h-1.5 rounded-full",
+                     dbStatus === 'online' ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : 
+                     dbStatus === 'syncing' ? "bg-blue-500 animate-pulse" : "bg-red-500"
+                   )} />
+                   <span className="text-[11px] font-semibold text-slate-600">Firebase Live</span>
+                </div>
+                <Database size={12} className="text-slate-300" />
+             </div>
+
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                   <div className={cn(
+                     "w-1.5 h-1.5 rounded-full", 
+                     syncing ? "bg-blue-500 animate-pulse" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                   )} />
+                   <span className="text-[11px] font-semibold text-slate-600">Sheet Sync</span>
+                </div>
+                <RefreshCw size={12} className={cn("text-slate-300", syncing && "animate-spin")} />
+             </div>
+
+             <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-2 bg-white p-2 rounded-lg border border-gray-100">
+               <Clock size={10} />
+               <span>Last Sync: {lastSynced || 'Never'}</span>
+             </div>
+
+             <button 
+               onClick={onSync}
+               disabled={syncing}
+               className={cn(
+                 "w-full mt-2 py-1.5 px-3 rounded-lg text-[11px] font-bold flex items-center justify-center gap-2 transition-all",
+                 syncing 
+                   ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+                   : "bg-indigo-600 text-white hover:bg-indigo-700 active:scale-[0.98] shadow-sm hover:shadow-indigo-200"
+               )}
+             >
+               <RefreshCw size={12} className={cn(syncing && "animate-spin")} />
+               {syncing ? 'Syncing...' : 'Sync Now'}
+             </button>
+          </div>
         </div>
       </aside>
     </>

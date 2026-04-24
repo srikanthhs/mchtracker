@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from '@/src/lib/firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, getDocs, orderBy, where, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -15,7 +15,12 @@ import {
   TrendingUp,
   Search,
   Bell,
-  Megaphone
+  Megaphone,
+  AlertCircle,
+  CheckCircle2,
+  Cloud,
+  RefreshCw,
+  Database
 } from 'lucide-react';
 import { LoginOverlay } from './components/LoginOverlay';
 import { Sidebar } from './components/Sidebar';
@@ -41,7 +46,11 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
+  const [syncReport, setSyncReport] = useState<{ imported: number, skipped: number, error?: string, rawSnippet?: any, validationFailures?: string[] } | null>(null);
+  const [sheetScriptUrl, setSheetScriptUrl] = useState<string>(localStorage.getItem('hrp_sheet_url') || '');
   const [authReady, setAuthReady] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'online' | 'error' | 'syncing'>('online');
   const [lastSynced, setLastSynced] = useState<string | null>(localStorage.getItem('hrp_last_sync'));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,6 +116,7 @@ export default function App() {
     }
 
     const unsubscribePatients = onSnapshot(qP, (snap) => {
+      setDbStatus('syncing');
       const data: PatientRecord[] = [];
       snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as PatientRecord));
       
@@ -116,6 +126,10 @@ export default function App() {
         setPatients(data);
       }
       setLoading(false);
+      setDbStatus('online');
+    }, (err) => {
+      console.error("Firestore Listen Errror", err);
+      setDbStatus('error');
     });
 
     // Listen to Announcements
@@ -163,46 +177,78 @@ export default function App() {
   const handleSheetSync = async (silent = false) => {
     if (!currentUser || syncing) return;
     setSyncing(true);
+    setSyncProgress({ current: 0, total: 0 });
+    setSyncReport(null);
+    
     try {
       console.log('Fetching raw sheet data...');
-      const rawData = await fetchSheetData();
-      console.log(`Received ${rawData.length} rows from Sheets.`);
+      const rawData = await fetchSheetData(sheetScriptUrl || undefined);
       
+      if (!rawData || rawData.length === 0) {
+        throw new Error("Google Sheets returned 0 rows. Check script deployment.");
+      }
+
+      const totalRows = rawData.length;
+      setSyncProgress({ current: 0, total: totalRows });
+
       let importedCount = 0;
       let skippedCount = 0;
+      const validationFailures: string[] = [];
+      const rawSnippet = rawData.slice(0, 3);
 
-      for (const [index, raw] of rawData.entries()) {
-        const patient = mapSheetToPatient(raw);
+      // Process in batches of 500 (Firestore limit)
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < totalRows; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = rawData.slice(i, i + BATCH_SIZE);
         
-        // Ensure we have at least a Name and Block to create a record
-        if (patient.n && patient.n !== 'Unknown' && patient.b) {
-          const id = patient.id || `${patient.n}-${patient.b}-${index}`.replace(/\s+/g, '-').toLowerCase();
-          await setDoc(doc(db, 'patients', id), {
-            ...patient,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-          importedCount++;
-        } else {
-          skippedCount++;
+        for (const [chunkIndex, raw] of chunk.entries()) {
+          const globalIndex = i + chunkIndex;
+          const patient = mapSheetToPatient(raw);
+          
+          if (patient.isValid) {
+            // Priority for ID: 
+            // 1. PICME ID from sheet
+            // 2. Stable composite ID (Name + Husband + Block)
+            // 3. Last fallback: Index based
+            const stableId = `${patient.n}-${patient.hu || 'nohu'}-${patient.b || 'noblock'}`.replace(/\s+/g, '-').toLowerCase();
+            const id = patient.id || stableId || `row-${globalIndex}`;
+            
+            const { isValid, validationErrors, ...recordData } = patient;
+            
+            const docRef = doc(db, 'patients', id);
+            batch.set(docRef, {
+              ...recordData,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+            
+            importedCount++;
+          } else {
+            skippedCount++;
+            if (validationFailures.length < 10) {
+              validationFailures.push(`Row ${globalIndex + 1}: ${patient.validationErrors?.join(', ')}`);
+            }
+          }
         }
+        
+        await batch.commit();
+        setSyncProgress({ current: Math.min(i + BATCH_SIZE, totalRows), total: totalRows });
       }
       
       const now = new Date().toLocaleTimeString();
       setLastSynced(now);
       localStorage.setItem('hrp_last_sync', now);
-      
-      if (!silent) {
-        alert(`Sync Complete!\n\u2705 Processed: ${importedCount}\n\u26A0\uFE0F Skipped (Incomplete Data): ${skippedCount}`);
-      }
+      setSyncReport({ imported: importedCount, skipped: skippedCount, rawSnippet, validationFailures });
     } catch (err: any) {
-      if (!silent) {
-        const msg = err.message || 'Unknown Error';
-        const sub = err.details || 'Please check the browser console for details.';
-        alert(`Sync Failed!\n\nIssue: ${msg}\nDetails: ${sub}`);
-      }
       console.error('Sheet Sync Error:', err);
+      setSyncReport({ 
+        imported: 0, 
+        skipped: 0, 
+        error: `${err.message || 'Unknown Error'}: ${err.details || 'Check logs'}` 
+      });
     } finally {
       setSyncing(false);
+      setSyncProgress({ current: 0, total: 0 });
     }
   };
 
@@ -260,6 +306,10 @@ export default function App() {
         activeBlock={activeBlock}
         activePHC={activePHC}
         collapsed={sidebarCollapsed}
+        dbStatus={dbStatus}
+        syncing={syncing}
+        lastSynced={lastSynced}
+        onSync={() => handleSheetSync()}
         onFilterChange={(f) => { setActiveFilter(f); setActiveBlock(''); setActivePHC(''); }}
         onBlockChange={(b) => { setActiveBlock(b); setActivePHC(''); }}
         onPHCChange={(b, p) => { setActiveBlock(b); setActivePHC(p); }}
@@ -362,16 +412,120 @@ export default function App() {
              </div>
            )}
            
-           <div className="mb-4 flex items-center justify-between px-1">
-             <div className="flex items-center gap-2">
-               <div className={cn("w-2 h-2 rounded-full", syncing ? "bg-indigo-500 animate-pulse" : "bg-emerald-500")} />
-               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                 {syncing ? 'Syncing with Google Sheets...' : `Cloud Balanced (Last: ${lastSynced || 'N/A'})`}
-               </span>
+           <div className="mb-4 space-y-3">
+             <div className="flex items-center justify-between px-1">
+               <div className="flex items-center gap-2">
+                 <div className={cn("w-2 h-2 rounded-full", syncing ? "bg-indigo-500 animate-pulse" : "bg-emerald-500")} />
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                   {syncing ? `Syncing: ${syncProgress.current} / ${syncProgress.total}` : `Cloud Balanced (Last: ${lastSynced || 'N/A'})`}
+                 </span>
+               </div>
+               <div className="text-[10px] text-slate-300 font-medium">
+                 {syncing ? `${Math.round((syncProgress.current/syncProgress.total)*100 || 0)}%` : 'Auto-sync every 10 min'}
+               </div>
              </div>
-             <div className="text-[10px] text-slate-300 font-medium">
-               Auto-sync every 10 min
-             </div>
+
+             {syncing && (
+               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
+                 <motion.div 
+                   className="h-full bg-indigo-500"
+                   initial={{ width: 0 }}
+                   animate={{ width: `${(syncProgress.current/syncProgress.total)*100}%` }}
+                 />
+               </div>
+             )}
+
+             {syncReport && (
+               <div className={cn(
+                 "p-4 rounded-xl border animate-in fade-in slide-in-from-top-2 duration-300",
+                 syncReport.error ? "bg-red-50 border-red-100" : "bg-indigo-50 border-indigo-100"
+               )}>
+                 <div className="flex items-start justify-between">
+                   <div className="flex gap-3">
+                     <div className={cn("p-2 rounded-lg shrink-0", syncReport.error ? "bg-red-100 text-red-600" : "bg-indigo-100 text-indigo-600")}>
+                        {syncReport.error ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+                     </div>
+                     <div className="space-y-1">
+                       <h4 className={cn("text-sm font-bold", syncReport.error ? "text-red-700" : "text-indigo-900")}>
+                         {syncReport.error ? "Sync Issue Detected" : "Sheet Sync Complete"}
+                       </h4>
+                       <p className="text-xs text-slate-600 leading-relaxed max-w-md">
+                         {syncReport.error 
+                           ? syncReport.error 
+                           : `Successfully synchronized ${syncReport.imported} patients from your Google Sheet. ${syncReport.skipped > 0 ? `${syncReport.skipped} rows skipped due to missing names or invalid data.` : ''}`
+                         }
+                       </p>
+
+                       {syncReport.validationFailures && syncReport.validationFailures.length > 0 && (
+                         <div className="mt-2 space-y-1">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase">Validation Failures (First 10):</p>
+                            {syncReport.validationFailures.map((err, i) => (
+                              <p key={i} className="text-[10px] text-red-500 flex items-center gap-1">
+                                <AlertCircle size={10} /> {err}
+                              </p>
+                            ))}
+                         </div>
+                       )}
+                       
+                       {syncReport.error && syncReport.error.includes('TypeError') && (
+                         <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
+                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Required Fix for Google Apps Script:</p>
+                            <p className="text-[11px] text-slate-600">Your script is crashing. Please ensure you are using <code>SpreadsheetApp.openById('YOUR_ID')</code> instead of <code>getActiveSpreadsheet()</code>.</p>
+                            <button 
+                              onClick={() => {
+                                const code = `function doGet() {
+  var ss = SpreadsheetApp.openById('PASTE_YOUR_SHEET_ID_HERE');
+  var sheet = ss.getSheets()[0];
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
+    results.push(obj);
+  }
+  return ContentService.createTextOutput(JSON.stringify(results)).setMimeType(ContentService.MimeType.JSON);
+}`;
+                                navigator.clipboard.writeText(code);
+                                alert('Correct Code.gs copied to clipboard! Paste this into your Google Apps Script editor.');
+                              }}
+                              className="text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-md font-bold hover:bg-red-700 transition-colors"
+                            >
+                              Copy Correct Script Code
+                            </button>
+                         </div>
+                       )}
+
+                       <div className="mt-4 pt-4 border-t border-slate-200/60">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">Custom Script URL (Optional)</label>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text" 
+                              value={sheetScriptUrl}
+                              placeholder="https://script.google.com/macros/s/.../exec"
+                              onChange={(e) => {
+                                setSheetScriptUrl(e.target.value);
+                                localStorage.setItem('hrp_sheet_url', e.target.value);
+                              }}
+                              className="flex-1 text-[11px] px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                            />
+                            <button 
+                              onClick={() => handleSheetSync()}
+                              className="bg-indigo-600 text-white text-[10px] font-bold px-4 py-1.5 rounded-lg active:scale-95 transition-all"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-1 italic">Leave empty to use the system default deployment.</p>
+                       </div>
+                     </div>
+                   </div>
+                   <button onClick={() => setSyncReport(null)} className="text-slate-400 hover:text-slate-600">
+                     <X size={16} />
+                   </button>
+                 </div>
+               </div>
+             )}
            </div>
            
            <PatientTable 

@@ -9,6 +9,8 @@ import { X, Phone, MapPin, Calendar, Activity, Info, Edit3, User, Save, ListFilt
 import { db } from '../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 
+import { validatePatientData } from '../services/sheetService';
+
 interface DrawerProps {
   patient: PatientRecord | null;
   onClose: () => void;
@@ -35,6 +37,13 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
   
   const handleSave = async () => {
     if (!patient.id) return;
+    
+    const { isValid, errors } = validatePatientData(formData);
+    if (!isValid) {
+      alert('Cannot save record. Fix following errors:\n\n' + errors.join('\n'));
+      return;
+    }
+
     setSaving(true);
     try {
       const patientRef = doc(db, 'patients', patient.id);

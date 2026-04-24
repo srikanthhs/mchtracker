@@ -16,62 +16,83 @@ async function startServer() {
 
   // Proxy route for Google Sheets to bypass CORS
   app.get('/api/sheet-data', async (req, res) => {
-    const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
+    const defaultUrl = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
+    const SHEET_URL = (req.query.url as string) || defaultUrl;
     
     try {
-      console.log('Proxying request to Google Sheets:', SHEET_URL);
+      console.log(`[API] Proxying fetch to: ${SHEET_URL.substring(0, 50)}...`);
+      
       const response = await fetch(SHEET_URL, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Vite-Proxy-Server)'
+          'Accept': 'application/json, text/plain, */*',
+          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Sync)'
         },
         redirect: 'follow'
       });
       
-      const contentType = response.headers.get('content-type');
+      const contentType = response.headers.get('content-type') || '';
       const text = await response.text();
 
+      console.log(`[API] Google Response: ${response.status}, Content-Type: ${contentType}`);
+
       if (!response.ok) {
-        console.error(`Google Sheets Error: ${response.status} ${response.statusText}`);
+        console.error(`[API] Google Error: ${response.status} - ${text.substring(0, 100)}`);
         return res.status(response.status).json({ 
-          error: 'Google Sheets returned an error', 
+          error: 'Google Sheets API Error', 
           status: response.status,
           details: text.substring(0, 200)
         });
       }
 
-      if (contentType && contentType.includes('text/html')) {
-        // Detect specific Google Script errors in the HTML body
-        const scriptErrorMatch = text.match(/<div[^>]*>(TypeError: [^<]+)<\/div>/);
-        if (scriptErrorMatch) {
+      // If we got HTML, Google script might be crashing or redirecting
+      if (contentType.includes('text/html') || text.trim().startsWith('<!')) {
+        const lowerText = text.toLowerCase();
+        
+        // 1. Script Runtime Error
+        const runtimeMatch = text.match(/TypeError: [^<]+/i);
+        if (runtimeMatch) {
           return res.status(502).json({ 
             error: 'Google Apps Script Runtime Error',
-            details: scriptErrorMatch[1],
-            suggestedFix: 'Your script is crashing. Ensure it is linked to a spreadsheet and the sheet ID is correct.'
+            details: runtimeMatch[0].replace(/&#39;/g, "'"),
+            suggestedFix: 'Your script is crashing. Ensure it uses SpreadsheetApp.openById("ID").'
           });
         }
 
-        console.error('Received HTML instead of JSON. Likely a login or error page.');
+        // 2. Auth Required
+        if (lowerText.includes('sign in') || lowerText.includes('google-signin') || lowerText.includes('servicelogin')) {
+          return res.status(403).json({
+            error: 'Authorization Required',
+            details: 'The script URL is redirecting to a login page.',
+            suggestedFix: 'Set "Who has access" to "Anyone" in deployment settings.'
+          });
+        }
+
         return res.status(502).json({ 
-          error: 'Received HTML instead of JSON. Please ensure the Google Apps Script is deployed as "Anyone, even anonymous".',
+          error: 'Received HTML instead of Data',
+          details: 'The script returned a web page. This usually means the deployment URL is wrong or private.',
           snippet: text.substring(0, 300)
         });
       }
 
+      // Try parsing JSON
       try {
         const data = JSON.parse(text);
         res.json(data);
       } catch (parseError) {
-        console.error('Failed to parse JSON response:', parseError);
+        console.error('[API] JSON Parse Error:', parseError);
         res.status(502).json({ 
-          error: 'Malformed JSON response from Google Sheets', 
-          snippet: text.substring(0, 100) 
+          error: 'Malformed Data Received', 
+          details: 'The script response was not valid JSON.',
+          snippet: text.substring(0, 100)
         });
       }
     } catch (error: any) {
-      console.error('Proxy network error:', error);
-      res.status(500).json({ error: 'Network error connecting to Google Sheets', details: error.message });
+      console.error('[API] Proxy Crash:', error);
+      res.status(500).json({ 
+        error: 'Proxy Connection Failed', 
+        details: error.message 
+      });
     }
   });
 
