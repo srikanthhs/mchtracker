@@ -47,7 +47,15 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
-  const [syncReport, setSyncReport] = useState<{ imported: number, skipped: number, error?: string, rawSnippet?: any, validationFailures?: string[] } | null>(null);
+  const [syncReport, setSyncReport] = useState<{ 
+    imported: number, 
+    skipped: number, 
+    error?: string, 
+    details?: string,
+    failingUrl?: string,
+    rawSnippet?: any, 
+    validationFailures?: string[] 
+  } | null>(null);
   const [sheetScriptUrl, setSheetScriptUrl] = useState<string>(localStorage.getItem('hrp_sheet_url') || '');
   const [authReady, setAuthReady] = useState(false);
   const [dbStatus, setDbStatus] = useState<'online' | 'error' | 'syncing'>('online');
@@ -244,7 +252,9 @@ export default function App() {
       setSyncReport({ 
         imported: 0, 
         skipped: 0, 
-        error: `${err.message || 'Unknown Error'}: ${err.details || 'Check logs'}` 
+        error: `${err.message || 'Unknown Error'}`,
+        details: err.details || 'Check logs',
+        failingUrl: err.url
       });
     } finally {
       setSyncing(false);
@@ -467,31 +477,51 @@ export default function App() {
                          </div>
                        )}
                        
-                       {syncReport.error && syncReport.error.includes('TypeError') && (
+                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment')) && (
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
-                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Required Fix for Google Apps Script:</p>
-                            <p className="text-[11px] text-slate-600">Your script is crashing. Please ensure you are using <code>SpreadsheetApp.openById('YOUR_ID')</code> instead of <code>getActiveSpreadsheet()</code>.</p>
+                            <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
+                            <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
+                              {syncReport.error.includes('404') && (
+                                <li><strong>404 Not Found:</strong> Google cannot find your script. Ensure you have <strong>Deployed as Web App</strong> and are using the URL ending in <code>/exec</code>.</li>
+                              )}
+                              {syncReport.error.includes('TypeError') && (
+                                <li><strong>TypeError:</strong> Your Apps Script is crashing. Use <code>SpreadsheetApp.openById("SHEET_ID")</code> instead of <code>getActiveSpreadsheet()</code>.</li>
+                              )}
+                              {syncReport.error.includes('Authorization') && (
+                                <li><strong>Access Denied:</strong> Set "Who has access" to <strong>Anyone</strong> in the deployment settings.</li>
+                              )}
+                            </ul>
                             <button 
                               onClick={() => {
                                 const code = `function doGet() {
+  // 1. REPLACEMENT: Use your actual Spreadsheet ID from the URL
   var ss = SpreadsheetApp.openById('PASTE_YOUR_SHEET_ID_HERE');
+  
+  // 2. Get the first sheet (usually names 'Sheet1')
   var sheet = ss.getSheets()[0];
   var data = sheet.getDataRange().getValues();
+  
+  // 3. Convert rows to JSON objects using headers
   var headers = data[0];
   var results = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
-    for (var j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
     results.push(obj);
   }
-  return ContentService.createTextOutput(JSON.stringify(results)).setMimeType(ContentService.MimeType.JSON);
+  
+  // 4. Return as JSON
+  return ContentService.createTextOutput(JSON.stringify(results))
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
                                 navigator.clipboard.writeText(code);
-                                alert('Correct Code.gs copied to clipboard! Paste this into your Google Apps Script editor.');
+                                alert('Template Script copied! Paste this into Google Apps Script and update the Sheet ID.');
                               }}
-                              className="text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-md font-bold hover:bg-red-700 transition-colors"
+                              className="text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-md font-bold hover:bg-red-700 transition-colors mt-1"
                             >
-                              Copy Correct Script Code
+                              Copy Modern Script Template
                             </button>
                          </div>
                        )}
@@ -504,8 +534,9 @@ export default function App() {
                               value={sheetScriptUrl}
                               placeholder="https://script.google.com/macros/s/.../exec"
                               onChange={(e) => {
-                                setSheetScriptUrl(e.target.value);
-                                localStorage.setItem('hrp_sheet_url', e.target.value);
+                                const val = e.target.value.trim();
+                                setSheetScriptUrl(val);
+                                localStorage.setItem('hrp_sheet_url', val);
                               }}
                               className="flex-1 text-[11px] px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                             />

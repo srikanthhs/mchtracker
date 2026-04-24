@@ -5,6 +5,7 @@ const SHEET_URL = '/api/sheet-data';
 export async function fetchSheetData(customUrl?: string): Promise<any[]> {
   try {
     const url = customUrl ? `${SHEET_URL}?url=${encodeURIComponent(customUrl)}` : SHEET_URL;
+    console.log(`[CLIENT] Fetching sheet data via proxy: ${url}`);
     const response = await fetch(url);
     const contentType = response.headers.get('content-type') || '';
     
@@ -40,9 +41,18 @@ export async function fetchSheetData(customUrl?: string): Promise<any[]> {
     }
 
     if (!response.ok) {
-       const errBody = await response.json().catch(() => ({}));
-       const error = new Error(errBody.error || `HTTP ${response.status}`);
-       (error as any).details = errBody.details || 'Check script URL and permissions.';
+       const text = await response.text();
+       let errBody: any = {};
+       try {
+         errBody = JSON.parse(text);
+       } catch (e) {
+         errBody = { error: `HTTP ${response.status}`, details: text.substring(0, 200) };
+       }
+       
+       const errorMsg = errBody.error || `Error ${response.status}`;
+       const error = new Error(errorMsg);
+       (error as any).details = errBody.details || `The server returned ${response.status}`;
+       if (errBody.url) (error as any).url = errBody.url;
        throw error;
     }
 

@@ -17,31 +17,49 @@ async function startServer() {
   // Proxy route for Google Sheets to bypass CORS
   app.get('/api/sheet-data', async (req, res) => {
     const defaultUrl = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
-    const SHEET_URL = (req.query.url as string) || defaultUrl;
+    
+    // Safety check for query param
+    let SHEET_URL = defaultUrl;
+    if (typeof req.query.url === 'string' && req.query.url.trim() !== '') {
+      SHEET_URL = req.query.url.trim();
+    }
+    
+    console.log(`[PROXY] Requesting URL: "${SHEET_URL}" (Length: ${SHEET_URL.length})`);
     
     try {
-      console.log(`[API] Proxying fetch to: ${SHEET_URL.substring(0, 50)}...`);
-      
+      // Validate URL format roughly
+      if (!SHEET_URL.startsWith('https://script.google.com')) {
+        return res.status(400).json({ error: 'Invalid URL', details: 'Only Google Script URLs are allowed.' });
+      }
       const response = await fetch(SHEET_URL, {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Sync)'
+          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Proxy)'
         },
-        redirect: 'follow'
-      });
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20000)
+      } as any);
       
       const contentType = response.headers.get('content-type') || '';
       const text = await response.text();
-
-      console.log(`[API] Google Response: ${response.status}, Content-Type: ${contentType}`);
+      
+      console.log(`[PROXY] Google Response: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
-        console.error(`[API] Google Error: ${response.status} - ${text.substring(0, 100)}`);
+        // Handle Google's 404 specifically
+        if (response.status === 404) {
+          return res.status(404).json({
+            error: 'Google Script URL Not Found (404)',
+            details: 'The URL you provided does not exist on Google. Check for typos or if the script was deleted.',
+            url: SHEET_URL
+          });
+        }
+
         return res.status(response.status).json({ 
-          error: 'Google Sheets API Error', 
-          status: response.status,
-          details: text.substring(0, 200)
+          error: `Google Error ${response.status}`, 
+          details: text.substring(0, 300) || response.statusText,
+          url: SHEET_URL
         });
       }
 
