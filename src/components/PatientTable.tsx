@@ -68,66 +68,87 @@ export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch,
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.map((r, i) => {
-              const score = calcScore(r.r);
-              const cat = getRiskCat(score);
-              const vs = getVisitStatus(r);
-              return (
-                <tr 
-                  key={r.id || `${r.n}-${i}`}
-                  onClick={() => onRowClick(r)}
-                  className="group hover:bg-indigo-50/30 cursor-pointer transition-colors"
-                >
-                  <td className="px-4 py-3.5">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-semibold text-slate-700 group-hover:text-primary transition-colors">{r.n}</span>
-                      <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase">{r.id || 'No PICME'}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5 text-center text-xs text-slate-600 font-medium">{r.a || '—'}</td>
-                  <td className="px-4 py-3.5 text-center text-[11px] text-slate-500 font-bold tracking-tighter">
-                    {r.g || '?'}/{r.pa || '?'}
-                  </td>
-                  <td className="px-4 py-3.5 text-[12px] text-slate-900 font-bold tabular-nums">
-                    {fmtDate(r.e)}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <Badge 
-                      style={{ background: cat.bg, color: cat.color, border: '1px solid currentColor', opacity: 0.85 }}
-                    >
-                      <span className="font-extrabold">{score}</span> {cat.label}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {vs ? (
-                      <Badge className={cn("rounded-md", vs.cls)}>{vs.label}</Badge>
-                    ) : (
-                      <span className="text-[10px] text-slate-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    {r.ds === 'Delivered' ? (
-                      <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md">Live</Badge>
-                    ) : (
-                      <Badge className="bg-amber-50 text-amber-700 border border-amber-100 rounded-md">Active</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] text-slate-700 font-semibold">{r.p}</span>
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{r.b}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3.5 text-right">
-                    <button className="p-1.5 rounded-lg bg-slate-50 group-hover:bg-indigo-100 text-slate-400 group-hover:text-primary transition-all">
-                      <ChevronRight size={14} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+            {data.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="py-20 text-center">
+                   <div className="flex flex-col items-center gap-3">
+                      <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                        <Search size={24} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-600">No patients found</p>
+                        <p className="text-xs text-slate-400">Try clearing your filters or search query.</p>
+                      </div>
+                   </div>
+                </td>
+              </tr>
+            ) : (
+              data.map((r, i) => {
+                const score = calcScore(r.r);
+                const cat = getRiskCat(score);
+                const vs = getVisitStatus(r);
+                return (
+                  <tr 
+                    key={r.id || `${r.n}-${i}`}
+                    onClick={() => onRowClick(r)}
+                    className="group hover:bg-indigo-50/30 cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-slate-700 group-hover:text-primary transition-colors">{r.n}</span>
+                        <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase">{r.id || 'No PICME'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-center text-xs text-slate-600 font-medium">{r.a || '—'}</td>
+                    <td className="px-4 py-3.5 text-center text-[11px] text-slate-500 font-bold tracking-tighter">
+                      {r.g || '?'}/{r.pa || '?'}
+                    </td>
+                    <td className="px-4 py-3.5 text-[12px] text-slate-900 font-bold tabular-nums">
+                      {fmtDate(r.e)}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Badge 
+                        style={{ background: cat.bg, color: cat.color, border: '1px solid currentColor', opacity: 0.85 }}
+                      >
+                        <span className="font-extrabold">{score}</span> {cat.label}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {vs ? (
+                        <Badge className={cn("rounded-md", vs.cls)}>{vs.label}</Badge>
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {r.ds === 'Delivered' ? (
+                        <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md">Live</Badge>
+                      ) : (
+                        <Badge className="bg-amber-50 text-amber-700 border border-amber-100 rounded-md">Active</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-col">
+                        <span className="text-[11px] text-slate-700 font-semibold">{r.p}</span>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">{r.b}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <div className="p-1.5 rounded-lg bg-slate-50 group-hover:bg-indigo-100 text-slate-400 group-hover:text-primary transition-all inline-block">
+                        <ChevronRight size={14} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
+      </div>
+      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+           Showing {data.length} records
+        </p>
       </div>
     </div>
   );

@@ -49,6 +49,7 @@ export async function fetchSheetData(customUrl?: string): Promise<any[]> {
        const text = await response.text();
        const ct = response.headers.get('content-type') || 'unknown';
        console.error(`[CLIENT] Proxy Error ${response.status} (${ct}): ${text.substring(0, 100)}`);
+       
        let errBody: any = {};
        try {
          errBody = JSON.parse(text);
@@ -58,8 +59,9 @@ export async function fetchSheetData(customUrl?: string): Promise<any[]> {
        
        const errorMsg = errBody.error || `Error ${response.status}`;
        const error = new Error(errorMsg);
-       (error as any).details = errBody.details || `The server returned ${response.status}`;
+       (error as any).details = errBody.details || `The server returned ${response.status}. This often happens if the Google Script URL is invalid or the deployment is not shared with "Anyone".`;
        if (errBody.url) (error as any).url = errBody.url;
+       (error as any).status = response.status;
        throw error;
     }
 

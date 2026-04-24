@@ -34,119 +34,102 @@ async function startServer() {
   });
 
   // Proxy route for Google Sheets to bypass CORS
-  // Simplified path for reliability
-  app.get('/api/sheet-data', async (req, res) => {
-    console.log(`[API_HIT] /api/sheet-data reached. Query:`, req.query);
+  // Broadening matching and adding robust debugging
+  app.all(['/api/sheet-data', '/api/sheet-data/'], async (req, res) => {
+    console.log(`[PROXY_INVOKED] Method: ${req.method}, Path: ${req.path}`);
+    console.log(`[PROXY_QUERY]`, req.query);
+
     const defaultUrl = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
     
-    // Safety check for query param
     let SHEET_URL = defaultUrl;
     if (typeof req.query.url === 'string' && req.query.url.trim() !== '') {
       SHEET_URL = req.query.url.trim();
     }
     
-    console.log(`[PROXY_START] URL: "${SHEET_URL}"`);
-    
-    try {
-      // Validate URL format
-      if (!SHEET_URL.startsWith('https://script.google.com')) {
-        return res.status(400).json({ 
-          error: 'Invalid Google Script URL', 
-          details: 'The URL must start with https://script.google.com' 
-        });
-      }
+    // Ensure we don't proxy to ourselves or invalid domains
+    if (!SHEET_URL.startsWith('https://script.google.com')) {
+      console.warn(`[PROXY_REJECTED] Invalid URL: ${SHEET_URL}`);
+      return res.status(400).json({ 
+        error: 'Invalid Target URL', 
+        details: 'The proxy only supports https://script.google.com URLs.' 
+      });
+    }
 
+    try {
+      console.log(`[PROXY_FETCH] Upstream target: ${SHEET_URL}`);
+      
       const response = await fetch(SHEET_URL, {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) HRP-Tracker-Proxy/1.0'
+          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Server/1.0)'
         },
-        redirect: 'follow', // Crucial: Google redirects to usercontent
-        signal: AbortSignal.timeout(25000)
+        redirect: 'follow', // Critically important for Google Scripts
+        signal: AbortSignal.timeout(30000) // Increased to 30s
       } as any);
-      
+
+      const status = response.status;
       const contentType = response.headers.get('content-type') || '';
       const text = await response.text();
       
-      console.log(`[PROXY_RESULT] Status: ${response.status} ${response.statusText}, Type: ${contentType}`);
+      console.log(`[PROXY_UPSTREAM_RESPONSE] Status: ${status}, Type: ${contentType}, Size: ${text.length} bytes`);
 
       if (!response.ok) {
-        if (response.status === 404) {
-          return res.status(404).json({
-            error: 'Google Script 404 Not Found',
-            details: 'The deployment URL is incorrect. Ensure you are using the "Web App" URL from the "Deploy" menu.',
-            url: SHEET_URL
-          });
-        }
-        return res.status(response.status).json({ 
-          error: `Google Server Error (${response.status})`, 
-          details: text.substring(0, 500) || response.statusText,
-          url: SHEET_URL
+        console.error(`[PROXY_UPSTREAM_ERROR] Status: ${status}, Body snippet: ${text.substring(0, 200)}`);
+        return res.status(status).json({
+          error: `Google Script Error ${status}`,
+          details: status === 404 
+            ? 'The provided Apps Script URL returned 404. Ensure your script is deployed as a Web App.' 
+            : text.substring(0, 500) || 'Upstream server returned an error.',
+          targetUrl: SHEET_URL
         });
       }
 
-      // If we got HTML, Google script might be crashing or redirecting
+      // Check if we got JSON
+      if (contentType.includes('application/json') || (text.trim().startsWith('[') || text.trim().startsWith('{'))) {
+        try {
+          const json = JSON.parse(text);
+          return res.json(json);
+        } catch (e) {
+          console.error(`[PROXY_JSON_PARSE_FAIL] Content-Type said JSON but parse failed.`);
+        }
+      }
+
+      // If it's HTML, check for common Google error pages
       if (contentType.includes('text/html') || text.trim().startsWith('<!')) {
         const lowerText = text.toLowerCase();
         
-        // 1. Script Runtime Error
-        const runtimeMatch = text.match(/TypeError: [^<]+/i);
-        if (runtimeMatch) {
-          return res.status(502).json({ 
-            error: 'Google Apps Script Runtime Error',
-            details: runtimeMatch[0].replace(/&#39;/g, "'"),
-            suggestedFix: 'Your script is crashing. Ensure it uses SpreadsheetApp.openById("ID").'
+        if (lowerText.includes('sign in') || lowerText.includes('servicelogin')) {
+           return res.status(403).json({
+             error: 'Google Auth Required',
+             details: 'The script deployment is not public. Set "Who has access" to "Anyone" in Google Apps Script.',
+           });
+        }
+
+        if (lowerText.includes('script error') || lowerText.includes('typeerror')) {
+          return res.status(502).json({
+            error: 'Apps Script Runtime Error',
+            details: 'The script crashed while executing. Check your script logs in Google Cloud Console.',
+            snippet: text.substring(0, 300)
           });
         }
 
-        // 2. Auth Required
-        if (lowerText.includes('sign in') || lowerText.includes('google-signin') || lowerText.includes('servicelogin')) {
-          return res.status(403).json({
-            error: 'Authorization Required',
-            details: 'The script URL is redirecting to a login page.',
-            suggestedFix: 'Set "Who has access" to "Anyone" in deployment settings.'
-          });
-        }
-
-        return res.status(502).json({ 
-          error: 'Unexpected Web Page Received',
-          details: lowerText.includes('sign in') 
-            ? 'PERMISSIONS ERROR: Google is requesting a login. Check your Deployment settings (Who has access: Anyone).'
-            : 'The script deployment returned HTML (a web page) instead of JSON data. Check if you pasted the Deployment URL or the Editor URL.',
+        return res.status(502).json({
+          error: 'Expected JSON, Received HTML',
+          details: 'The target URL returned a web page instead of data. Ensure you are using the Web App Deployment URL.',
           snippet: text.substring(0, 200)
         });
       }
 
-      // Try parsing JSON
-      try {
-        const data = JSON.parse(text);
-        res.json(data);
-      } catch (parseError) {
-        console.error('[API] JSON Parse Error:', parseError);
-        res.status(502).json({ 
-          error: 'Malformed Data Received', 
-          details: 'The script response was not valid JSON.',
-          snippet: text.substring(0, 100)
-        });
-      }
-    } catch (error: any) {
-      console.error('[API] Proxy Crash:', error);
-      
-      let message = 'Proxy Connection Failed';
-      let details = error.message;
+      // Fallback
+      res.json({ data: text, warning: 'Raw response returned as data' });
 
-      if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-        message = 'Google Connection Timeout';
-        details = 'The request to Google Apps Script took too long (over 25s). Check if your script is processing too much data.';
-      } else if (error.message.includes('ENOTFOUND') || error.message.includes('EAI_AGAIN')) {
-        message = 'DNS Search Failed';
-        details = 'Could not resolve script.google.com. This might be a temporary network issue in the container.';
-      }
-
-      res.status(500).json({ 
-        error: message, 
-        details: details 
+    } catch (err: any) {
+      console.error(`[PROXY_CRASH]`, err);
+      res.status(500).json({
+        error: 'Proxy Internal Failure',
+        details: err.message,
+        type: err.name
       });
     }
   });

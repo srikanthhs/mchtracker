@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from '@/src/lib/firebase';
-import { collection, onSnapshot, query, setDoc, doc, getDocs, orderBy, where, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, query, setDoc, doc, getDocs, orderBy, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -50,12 +50,14 @@ export default function App() {
   const [syncReport, setSyncReport] = useState<{ 
     imported: number, 
     skipped: number, 
+    unchanged?: number,
     error?: string, 
     details?: string,
     failingUrl?: string,
     rawSnippet?: any, 
     validationFailures?: string[],
-    isPermissionError?: boolean
+    isPermissionError?: boolean,
+    isQuotaError?: boolean
   } | null>(null);
   const [sheetScriptUrl, setSheetScriptUrl] = useState<string>(localStorage.getItem('hrp_sheet_url') || '');
   const [authReady, setAuthReady] = useState(false);
@@ -124,14 +126,17 @@ export default function App() {
       qP = query(collection(db, 'patients'));
     }
 
-    const unsubscribePatients = onSnapshot(qP, (snap) => {
+    const unsubscribePatients = onSnapshot(qP as any, (snap: any) => {
       setDbStatus('syncing');
-      console.log(`[FIRESTORE] Snapshot received. Count: ${snap.size}`);
+      console.log(`[FIRESTORE] Snapshot received. Count: ${snap.size || 'N/A'}`);
       const data: PatientRecord[] = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        data.push({ id: doc.id, ...d } as PatientRecord);
-      });
+      
+      if (snap.docs) {
+        snap.forEach((d: any) => {
+          data.push({ id: d.id, ...d.data() } as PatientRecord);
+        });
+      }
+      
       console.log(`[FIRESTORE] Data processed: ${data.length} records.`);
       
       if (data.length === 0) {
@@ -221,6 +226,7 @@ export default function App() {
 
       let importedCount = 0;
       let skippedCount = 0;
+      let unchangedCount = 0;
       const validationFailures: string[] = [];
       const rawSnippet = rawData.slice(0, 3);
 
@@ -235,22 +241,41 @@ export default function App() {
           const patient = mapSheetToPatient(raw);
           
           if (patient.isValid) {
-            // Priority for ID: 
-            // 1. PICME ID from sheet
-            // 2. Stable composite ID (Name + Husband + Block)
-            // 3. Last fallback: Index based
             const stableId = `${patient.n}-${patient.hu || 'nohu'}-${patient.b || 'noblock'}`.replace(/\s+/g, '-').toLowerCase();
             const id = patient.id || stableId || `row-${globalIndex}`;
             
             const { isValid, validationErrors, ...recordData } = patient;
             
-            const docRef = doc(db, 'patients', id);
-            batch.set(docRef, {
-              ...recordData,
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
+            // QUOTA OPTIMIZATION: Check if data has actually changed before writing
+            const existing = patients.find(p => p.id === id);
+            let hasChanged = true;
             
-            importedCount++;
+            if (existing) {
+              // Compare core fields to see if update is needed
+              // We skip comparison of 'updatedAt' as that's server side
+              const keysToCompare = ['n', 'id', 'p', 'b', 'h', 'hu', 'e', 'a', 'ph', 'g', 'pa', 'pp', 'pt', 'lv', 'rm', 'as', 'ds'] as const;
+              const diff = keysToCompare.some(key => {
+                const val1 = String(recordData[key as keyof typeof recordData] || '');
+                const val2 = String(existing[key as keyof typeof existing] || '');
+                return val1 !== val2;
+              });
+              
+              // Also compare risk factors (arrays)
+              const riskDiff = JSON.stringify(recordData.r || []) !== JSON.stringify(existing.r || []);
+              
+              hasChanged = diff || riskDiff;
+            }
+
+            if (hasChanged) {
+              const docRef = doc(db, 'patients', id);
+              batch.set(docRef, {
+                ...recordData,
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+              importedCount++;
+            } else {
+              unchangedCount++; 
+            }
           } else {
             skippedCount++;
             if (validationFailures.length < 10) {
@@ -259,24 +284,43 @@ export default function App() {
           }
         }
         
-        await batch.commit();
+        try {
+          await batch.commit();
+        } catch (batchErr: any) {
+          console.error("Batch commit failed:", batchErr);
+          if (batchErr.code === 'resource-exhausted' || batchErr.message?.includes('Quota')) {
+            throw new Error("FIRESTORE_QUOTA_EXCEEDED: Daily write limit reached. The application has hit the free tier quota (20,000 writes/day). Sync will resume tomorrow.");
+          }
+          throw batchErr;
+        }
         setSyncProgress({ current: Math.min(i + BATCH_SIZE, totalRows), total: totalRows });
       }
       
       const now = new Date().toLocaleTimeString();
       setLastSynced(now);
       localStorage.setItem('hrp_last_sync', now);
-      setSyncReport({ imported: importedCount, skipped: skippedCount, rawSnippet, validationFailures });
+      setSyncReport({ 
+        imported: importedCount, 
+        skipped: skippedCount, 
+        unchanged: unchangedCount, 
+        rawSnippet, 
+        validationFailures 
+      });
     } catch (err: any) {
       console.error('Sheet Sync Error:', err);
       const isPermission = err.message?.toLowerCase().includes('permission') || err.message?.includes('insufficient');
+      const isQuota = err.message?.includes('FIRESTORE_QUOTA_EXCEEDED') || err.code === 'resource-exhausted' || err.message?.includes('Quota');
+      
       setSyncReport({ 
         imported: 0, 
         skipped: 0, 
-        error: `${err.message || 'Unknown Error'}`,
-        details: err.details || (isPermission ? 'PERMISSIONS DENIED: Your account role is not authorized to write to the database, or your account document is missing. Contact Admin.' : 'Check logs'),
+        error: isQuota ? "Daily Sync Quota Reached" : `${err.message || 'Unknown Error'}`,
+        details: isQuota 
+          ? "You have reached the Firestore free tier daily limit (20,000 writes). Try again in 24 hours when the quota resets or reduce the number of rows in your sheet."
+          : (err.details || (isPermission ? 'PERMISSIONS DENIED: Your account role is not authorized to write to the database.' : 'Check logs')),
         failingUrl: err.url,
-        isPermissionError: isPermission
+        isPermissionError: isPermission,
+        isQuotaError: isQuota
       });
     } finally {
       setSyncing(false);
@@ -284,19 +328,14 @@ export default function App() {
     }
   };
 
-  // 3. Auto-sync Effect
+  // 3. Sync Control - Manual Only to preserve quota
   useEffect(() => {
     if (!currentUser || !authReady) return;
     
-    // Auto sync on mount
-    handleSheetSync(true);
-    
-    // Set interval for every 10 minutes
-    const interval = setInterval(() => {
-      handleSheetSync(true);
-    }, 10 * 60 * 1000);
-    
-    return () => clearInterval(interval);
+    // We disable auto-sync on load to prevent Quota Exceeded (resource-exhausted) errors.
+    // The free tier of Firestore only allows 20,000 writes per day.
+    // Repeatedly syncing a large spreadsheet will quickly hit this limit.
+    console.log('[SYNC] Auto-sync disabled. User must manually trigger sync to preserve daily quota.');
   }, [currentUser, authReady]);
 
   // Generate Insights
@@ -312,19 +351,35 @@ export default function App() {
 
   // Filtered List
   const filteredPatients = useMemo(() => {
+    const queryLower = searchQuery.toLowerCase().trim();
+    
     return patients.filter(r => {
-      const matchSearch = (r.n + r.id + r.p + r.h).toLowerCase().includes(searchQuery.toLowerCase());
-      if (!matchSearch) return false;
+      // 1. Search Query Mask
+      if (queryLower) {
+        const searchableText = `${r.n} ${r.id} ${r.p} ${r.h} ${r.hu} ${r.b}`.toLowerCase();
+        if (!searchableText.includes(queryLower)) return false;
+      }
       
-      if (activePHC) return r.p === activePHC;
-      if (activeBlock) return r.b === activeBlock;
+      // 2. PHC Filter
+      if (activePHC && r.p !== activePHC) return false;
+      
+      // 3. Block Filter (only if PHC not set)
+      if (!activePHC && activeBlock && r.b !== activeBlock) return false;
 
-      if (activeFilter === 'active') return r.ds !== 'Delivered' && r.ds !== 'Abortion';
-      if (activeFilter === 'delivered') return r.ds === 'Delivered';
+      // 4. Status Filters
+      if (activeFilter === 'active' && (r.ds === 'Delivered' || r.ds === 'Abortion')) return false;
+      if (activeFilter === 'delivered' && r.ds !== 'Delivered') return false;
       
       return true;
     });
   }, [patients, searchQuery, activeFilter, activeBlock, activePHC]);
+
+  useEffect(() => {
+    console.log(`[UI_STATE] Patients: ${patients.length}, Filtered: ${filteredPatients.length}`);
+    if (patients.length > 0 && filteredPatients.length === 0) {
+      console.warn('[UI_STATE] All patients filtered out by current view settings.');
+    }
+  }, [patients.length, filteredPatients.length]);
 
   if (!currentUser) {
     return <LoginOverlay onLogin={handleLogin} />;
@@ -484,7 +539,7 @@ export default function App() {
                        <p className="text-xs text-slate-600 leading-relaxed max-w-md">
                          {syncReport.error 
                            ? syncReport.error 
-                           : `Successfully synchronized ${syncReport.imported} patients from your Google Sheet. ${syncReport.skipped > 0 ? `${syncReport.skipped} rows skipped due to missing names or invalid data.` : ''}`
+                           : `Processed ${syncReport.imported + (syncReport.unchanged || 0)} records. ${syncReport.imported} updated. ${syncReport.unchanged || 0} unchanged. ${syncReport.skipped > 0 ? `${syncReport.skipped} skipped.` : ''}`
                          }
                        </p>
 
@@ -503,6 +558,22 @@ export default function App() {
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
                             <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
                             <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
+                               {syncReport.isQuotaError && (
+                                 <li className="p-3 bg-amber-50 text-amber-800 border-l-4 border-amber-500 rounded-lg">
+                                   <div className="flex items-center gap-2 mb-1">
+                                      <TrendingUp size={16} className="text-amber-600" />
+                                      <strong>FIRESTORE QUOTA EXCEEDED</strong>
+                                   </div>
+                                   <div className="text-[11px] font-normal leading-relaxed">
+                                     You have utilized the total daily write quota (20,000 writes) for the Free Tier of Firestore. 
+                                     <ul className="mt-2 list-disc pl-4 space-y-1">
+                                       <li><strong>Why:</strong> Every row synced counts as 1 write. Large spreadsheets hit this limit quickly.</li>
+                                       <li><strong>Reset:</strong> The quota will reset automatically in 24 hours.</li>
+                                       <li><strong>Action:</strong> Reduce the number of rows in your Sheet or sync less frequently.</li>
+                                     </ul>
+                                   </div>
+                                 </li>
+                               )}
                                {syncReport.error?.includes('404') && (
                                  <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
                                    <strong>CRITICAL: ENDPOINT NOT FOUND (404)</strong>
