@@ -9,13 +9,32 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Request logger
+  app.use((req, res, next) => {
+    if (req.url.startsWith('/api')) {
+      console.log(`[API_REQUEST] ${req.method} ${req.url}`);
+    }
+    next();
+  });
+
+  // Force JSON for API
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Content-Type', 'application/json');
+    next();
+  });
+
   // Health check
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    res.json({ 
+      status: 'ok', 
+      version: '1.0.7', 
+      node_version: process.version,
+      time: new Date().toISOString() 
+    });
   });
 
   // Proxy route for Google Sheets to bypass CORS
-  app.get('/api/sheet-data', async (req, res) => {
+  app.get(['/api/sheet-data', '/api/sheet-data/'], async (req, res) => {
     const defaultUrl = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
     
     // Safety check for query param
@@ -24,41 +43,43 @@ async function startServer() {
       SHEET_URL = req.query.url.trim();
     }
     
-    console.log(`[PROXY] Requesting URL: "${SHEET_URL}" (Length: ${SHEET_URL.length})`);
+    console.log(`[PROXY_START] URL: "${SHEET_URL}"`);
     
     try {
-      // Validate URL format roughly
+      // Validate URL format
       if (!SHEET_URL.startsWith('https://script.google.com')) {
-        return res.status(400).json({ error: 'Invalid URL', details: 'Only Google Script URLs are allowed.' });
+        return res.status(400).json({ 
+          error: 'Invalid Google Script URL', 
+          details: 'The URL must start with https://script.google.com' 
+        });
       }
+
       const response = await fetch(SHEET_URL, {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Proxy)'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) HRP-Tracker-Proxy/1.0'
         },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(20000)
+        redirect: 'follow', // Crucial: Google redirects to usercontent
+        signal: AbortSignal.timeout(25000)
       } as any);
       
       const contentType = response.headers.get('content-type') || '';
       const text = await response.text();
       
-      console.log(`[PROXY] Google Response: ${response.status} ${response.statusText}`);
+      console.log(`[PROXY_RESULT] Status: ${response.status} ${response.statusText}, Type: ${contentType}`);
 
       if (!response.ok) {
-        // Handle Google's 404 specifically
         if (response.status === 404) {
           return res.status(404).json({
-            error: 'Google Script URL Not Found (404)',
-            details: 'The URL you provided does not exist on Google. Check for typos or if the script was deleted.',
+            error: 'Google Script 404 Not Found',
+            details: 'The deployment URL is incorrect. Ensure you are using the "Web App" URL from the "Deploy" menu.',
             url: SHEET_URL
           });
         }
-
         return res.status(response.status).json({ 
-          error: `Google Error ${response.status}`, 
-          details: text.substring(0, 300) || response.statusText,
+          error: `Google Server Error (${response.status})`, 
+          details: text.substring(0, 500) || response.statusText,
           url: SHEET_URL
         });
       }
@@ -87,9 +108,11 @@ async function startServer() {
         }
 
         return res.status(502).json({ 
-          error: 'Received HTML instead of Data',
-          details: 'The script returned a web page. This usually means the deployment URL is wrong or private.',
-          snippet: text.substring(0, 300)
+          error: 'Unexpected Web Page Received',
+          details: lowerText.includes('sign in') 
+            ? 'PERMISSIONS ERROR: Google is requesting a login. Check your Deployment settings (Who has access: Anyone).'
+            : 'The script deployment returned HTML (a web page) instead of JSON data. Check if you pasted the Deployment URL or the Editor URL.',
+          snippet: text.substring(0, 200)
         });
       }
 

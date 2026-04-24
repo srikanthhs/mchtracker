@@ -34,14 +34,18 @@ export async function fetchSheetData(customUrl?: string): Promise<any[]> {
        }
        
        const error = new Error('Unexpected Web Page Received');
-       (error as any).details = text.includes('Sign in') 
-         ? 'ACCESS DENIED: Your Google Script is requesting a login. Set access to "Anyone" in Google Script.'
-         : `Received HTML snippet: ${text.substring(0, 100)}...`;
+       const isSignIn = text.includes('Sign in') || text.includes('ServiceLogin') || text.includes('google-signin');
+       
+       (error as any).details = isSignIn
+         ? 'ACCESS DENIED: Google is asking to Sign In. You MUST set "Who has access" to "Anyone" when deploying your script.'
+         : `received HTML instead of JSON. You might have pasted the "Editor" URL instead of the "Deployment" URL.`;
        throw error;
     }
 
     if (!response.ok) {
        const text = await response.text();
+       const ct = response.headers.get('content-type') || 'unknown';
+       console.error(`[CLIENT] Proxy Error ${response.status} (${ct}): ${text.substring(0, 100)}`);
        let errBody: any = {};
        try {
          errBody = JSON.parse(text);
@@ -57,6 +61,14 @@ export async function fetchSheetData(customUrl?: string): Promise<any[]> {
     }
 
     const data = await response.json();
+    
+    // Check for error property in the JSON itself (Google Script catch block)
+    if (data && !Array.isArray(data) && data.error) {
+      const error = new Error(data.error);
+      (error as any).details = 'The Google Script encountered a internal code error.';
+      throw error;
+    }
+
     return Array.isArray(data) ? data : (data.data || []);
   } catch (error) {
     console.error('Error fetching sheet data:', error);

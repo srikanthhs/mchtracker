@@ -477,53 +477,72 @@ export default function App() {
                          </div>
                        )}
                        
-                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment') || syncReport.error.includes('Illegal spreadsheet id')) && (
+                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment') || syncReport.error.includes('Illegal spreadsheet id') || syncReport.error.includes('Unexpected Web Page Received')) && (
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
                             <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
                             <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
+                               {syncReport.error.includes('Unexpected Web Page Received') && (
+                                 <li className="text-red-700 font-bold">
+                                   <strong>ACTION REQUIRED: Permission Issue</strong>
+                                   <div className="mt-1 font-normal opacity-80 pl-2">
+                                     • You likely pasted the <strong>Editor URL</strong> (ends in /edit) instead of the Deployment URL.<br/>
+                                     • <strong>Fix:</strong> In Apps Script, click <strong>Deploy &gt; New Deployment</strong>.<br/>
+                                     • Set "Who has access" to <strong>Anyone</strong>.<br/>
+                                     • Copy the <strong>Web App URL</strong> (ends in <code>/exec</code>).
+                                   </div>
+                                 </li>
+                               )}
                               {syncReport.error.includes('404') && (
-                                <li><strong>404 Not Found:</strong> Google cannot find your script. Ensure you have <strong>Deployed as Web App</strong> and are using the URL ending in <code>/exec</code>.</li>
+                                <li className="text-red-600 font-bold">
+                                  <strong>404 - SCRIPT NOT FOUND:</strong> Google cannot find this deployment.
+                                  <div className="mt-1 font-normal opacity-80 pl-2">
+                                    • <strong>Fix:</strong> Click <strong>Deploy &gt; New Deployment</strong> in Apps Script.<br/>
+                                    • Set "Who has access" to <strong>Anyone</strong>.<br/>
+                                    • Copy the <strong>Web App URL</strong> (ends in <code>/exec</code>).
+                                  </div>
+                                </li>
                               )}
                               {syncReport.error.includes('Illegal spreadsheet id') && (
-                                <li className="text-red-600"><strong>CRITICAL ERROR:</strong> You pasted a full URL instead of a Spreadsheet ID. <strong>Google Apps Script needs only the ID</strong> (the long string between /d/ and /edit).</li>
+                                <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
+                                  CRITICAL: Paste ONLY the ID (or use the Foolproof template below).
+                                </li>
                               )}
                               {syncReport.error.includes('TypeError') && (
-                                <li><strong>TypeError:</strong> Your Apps Script is crashing. Use <code>SpreadsheetApp.openById("SHEET_ID")</code> instead of <code>getActiveSpreadsheet()</code>.</li>
-                              )}
-                              {syncReport.error.includes('Authorization') && (
-                                <li><strong>Access Denied:</strong> Set "Who has access" to <strong>Anyone</strong> in the deployment settings.</li>
+                                <li><strong>Script Failing:</strong> Your script code is crashing. Use the template below.</li>
                               )}
                             </ul>
                             <button 
                               onClick={() => {
                                 const code = `/**
- * GOOGLE APPS SCRIPT TEMPLATE
- * 1. Open your Google Sheet
- * 2. Copy the ID from the URL (the long string between /d/ and /edit)
- * 3. Extensions > Apps Script
- * 4. Paste this code and REPLACE 'YOUR_ID_HERE'
- * 5. Deploy > New Deployment > Web App > Access: Anyone
+ * FOOLPROOF GOOGLE APPS SCRIPT
+ * 1. Extensions > Apps Script.
+ * 2. Paste this code and REPLACE 'ID_OR_URL_HERE'.
+ * 3. Deploy > New Deployment > Web App > Access: Anyone.
  */
 
 function doGet() {
   try {
-    // PASTE ONLY THE ID HERE, NOT THE FULL URL
-    var ss = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID_HERE');
+    var raw = 'ID_OR_URL_HERE';
+    var sid = raw;
+    if (raw.indexOf('docs.google.com') !== -1) {
+      var match = raw.match(/\\/d\\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) sid = match[1];
+    }
+    
+    var ss = SpreadsheetApp.openById(sid);
     var sheet = ss.getSheets()[0];
     var data = sheet.getDataRange().getValues();
+    var headers = data[0].map(function(h) { return String(h).toLowerCase().replace(/[\\s_]/g, ''); });
     
-    var headers = data[0];
     var results = [];
-    
     for (var i = 1; i < data.length; i++) {
       var obj = {};
-      var hasData = false;
+      var hasVal = false;
       for (var j = 0; j < headers.length; j++) {
-        var val = data[i][j];
-        obj[headers[j]] = val;
-        if (val !== "" && val !== null) hasData = true;
+        obj[headers[j]] = data[i][j];
+        if (data[i][j] !== "") hasVal = true;
       }
-      if (hasData) results.push(obj);
+      if (hasVal) results.push(obj);
     }
     
     return ContentService.createTextOutput(JSON.stringify(results))
@@ -534,11 +553,11 @@ function doGet() {
   }
 }`;
                                 navigator.clipboard.writeText(code);
-                                alert('Modern Script Template copied! Paste this into Google Apps Script.\n\nIMPORTANT: Use ONLY the ID extracted from the URL.');
+                                alert('Foolproof Template Copied!\n\nJust paste it and replace the ID/URL.');
                               }}
                               className="text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-md font-bold hover:bg-red-700 transition-colors mt-1"
                             >
-                              Copy Modern Script Template
+                              Copy Foolproof Script Template
                             </button>
                          </div>
                        )}
@@ -549,9 +568,12 @@ function doGet() {
                             <input 
                               type="text" 
                               value={sheetScriptUrl}
-                              placeholder="https://script.google.com/macros/s/.../exec"
+                              placeholder="PASTE THE DEPLOYMENT URL HERE (ends in /exec)"
                               onChange={(e) => {
                                 const val = e.target.value.trim();
+                                if (val && !val.includes('/exec')) {
+                                  console.warn("Input URL does not look like a deployment URL (missing /exec)");
+                                }
                                 setSheetScriptUrl(val);
                                 localStorage.setItem('hrp_sheet_url', val);
                               }}
