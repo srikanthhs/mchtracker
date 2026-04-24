@@ -120,25 +120,39 @@ export function validatePatientData(data: Partial<PatientRecord>): { isValid: bo
 export function mapSheetToPatient(raw: any): Partial<PatientRecord> & { isValid: boolean; validationErrors: string[] } {
   // Helper to find value from any potential key variant
   const getVal = (variants: string[]) => {
+    // Normalize all search variants to only include a-z0-9
+    const normalizedVariants = variants.map(v => v.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    
+    // 1. Try exact matches first
     for (const v of variants) {
-      const lowerV = v.toLowerCase().replace(/[\s_]/g, '');
+      if (raw[v] !== undefined) return raw[v];
+    }
+
+    // 2. Try normalized matches
+    for (const normalizedV of normalizedVariants) {
       for (const [key, val] of Object.entries(raw)) {
-        const normalizedKey = key.toLowerCase().replace(/[\s_]/g, '');
-        if (normalizedKey === lowerV) return val;
+        const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalizedKey === normalizedV) return val;
       }
     }
     return undefined;
   };
 
-  const name = String(getVal(['MotherName', 'Mother Name', 'Name', 'n']) || 'Unknown');
+  const nameVariants = [
+    'MotherName', 'Mother Name', 'Name', 'PatientName', 'Patient Name', 
+    'BeneficiaryName', 'Beneficiary Name', 'Mothers Name', 'Full Name', 'n'
+  ];
+  const nameVal = getVal(nameVariants);
+  const name = nameVal !== undefined ? String(nameVal) : 'Unknown';
+  
   const ageRaw = getVal(['Age', 'a']);
   const age = (ageRaw !== undefined && ageRaw !== '' && ageRaw !== null) ? Number(ageRaw) : null;
   const edd = String(getVal(['EDD', 'EDDDate', 'e']) || '');
 
   const mapped: Partial<PatientRecord> = {
-    id: String(getVal(['PICME', 'PICMENo', 'id']) || ''),
+    id: String(getVal(['PICME', 'PICMENo', 'PICME ID', 'id']) || ''),
     n: name,
-    hu: String(getVal(['HusbandName', 'Husband Name', 'hu']) || ''),
+    hu: String(getVal(['HusbandName', 'Husband Name', 'Husband', 'hu']) || ''),
     b: String(getVal(['Block', 'b']) || ''),
     p: String(getVal(['PHC', 'p']) || ''),
     h: String(getVal(['HSC', 'h']) || ''),

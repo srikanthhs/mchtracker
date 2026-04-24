@@ -54,7 +54,8 @@ export default function App() {
     details?: string,
     failingUrl?: string,
     rawSnippet?: any, 
-    validationFailures?: string[] 
+    validationFailures?: string[],
+    isPermissionError?: boolean
   } | null>(null);
   const [sheetScriptUrl, setSheetScriptUrl] = useState<string>(localStorage.getItem('hrp_sheet_url') || '');
   const [authReady, setAuthReady] = useState(false);
@@ -164,14 +165,18 @@ export default function App() {
           active: true,
           lastLogin: new Date()
         }, { merge: true });
-      } catch (e) {
-        console.warn("Profile auto-sync failed", e);
+        
+        // 2. ONLY set user state AFTER successful profile sync
+        setCurrentUser(user);
+        sessionStorage.setItem('hrp_session', JSON.stringify(user));
+      } catch (e: any) { 
+        console.error("Profile auto-sync failed", e);
+        const details = e.message?.includes('permission') 
+          ? 'DATABASE REJECTION: Your auth token is valid but rules denied the write to /users. Check firestore.rules.'
+          : e.message;
+        alert(`FATAL: Database Permission Denied.\n${details}`);
       }
     }
-
-    // 2. Then set user state to trigger listeners
-    setCurrentUser(user);
-    sessionStorage.setItem('hrp_session', JSON.stringify(user));
   };
 
   const handleLogout = () => {
@@ -249,12 +254,14 @@ export default function App() {
       setSyncReport({ imported: importedCount, skipped: skippedCount, rawSnippet, validationFailures });
     } catch (err: any) {
       console.error('Sheet Sync Error:', err);
+      const isPermission = err.message?.toLowerCase().includes('permission') || err.message?.includes('insufficient');
       setSyncReport({ 
         imported: 0, 
         skipped: 0, 
         error: `${err.message || 'Unknown Error'}`,
-        details: err.details || 'Check logs',
-        failingUrl: err.url
+        details: err.details || (isPermission ? 'PERMISSIONS DENIED: Your account role is not authorized to write to the database, or your account document is missing. Contact Admin.' : 'Check logs'),
+        failingUrl: err.url,
+        isPermissionError: isPermission
       });
     } finally {
       setSyncing(false);
@@ -477,11 +484,39 @@ export default function App() {
                          </div>
                        )}
                        
-                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment') || syncReport.error.includes('Illegal spreadsheet id') || syncReport.error.includes('Unexpected Web Page Received')) && (
+                       {(syncReport.error || (syncReport.validationFailures && syncReport.validationFailures.length > 0)) && (
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
                             <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
                             <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
-                               {syncReport.error.includes('Unexpected Web Page Received') && (
+                               {syncReport.error?.includes('Proxy') && (
+                                 <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
+                                   <strong>CONNECTION ERROR:</strong> The server failed to reach Google Apps Script. 
+                                   <div className="mt-1 font-normal opacity-80 text-[10px]">
+                                     • Ensure your Spreadsheet ID is valid.<br/>
+                                     • Check if Google is temporarily down or blocking the proxy.<br/>
+                                     • Refresh and try again in 1 minute.
+                                   </div>
+                                 </li>
+                               )}
+                               {syncReport.error?.includes('ID_OR_URL_HERE') && (
+                                 <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
+                                   CRITICAL: You MUST replace <code>ID_OR_URL_HERE</code> in the script code with your actual Spreadsheet ID.
+                                 </li>
+                               )}
+                               {syncReport.validationFailures && syncReport.validationFailures.length > 0 && (
+                                <li className="text-red-700">
+                                  <strong>Column Discovery:</strong> {syncReport.rawSnippet && syncReport.rawSnippet[0] ? Object.keys(syncReport.rawSnippet[0]).join(', ') : 'None detected'}
+                                  <p className="mt-1 text-[10px] opacity-70">
+                                    Ensure your sheet has a column exactly named "Mother Name" as the primary header.
+                                  </p>
+                                </li>
+                              )}
+                              {syncReport.rawSnippet && syncReport.rawSnippet[0] && (
+                                <li className="text-[10px] bg-slate-50 p-2 rounded border border-slate-100 font-mono overflow-auto max-h-24 break-all">
+                                  <strong>Row 1 Raw Keys/Values:</strong> {JSON.stringify(syncReport.rawSnippet[0])}
+                                </li>
+                              )}
+                              {syncReport.error?.includes('Unexpected Web Page Received') && (
                                  <li className="text-red-700 font-bold">
                                    <strong>ACTION REQUIRED: Permission Issue</strong>
                                    <div className="mt-1 font-normal opacity-80 pl-2">
@@ -492,7 +527,7 @@ export default function App() {
                                    </div>
                                  </li>
                                )}
-                              {syncReport.error.includes('404') && (
+                              {syncReport.error?.includes('404') && (
                                 <li className="text-red-600 font-bold">
                                   <strong>404 - SCRIPT NOT FOUND:</strong> Google cannot find this deployment.
                                   <div className="mt-1 font-normal opacity-80 pl-2">
@@ -502,12 +537,21 @@ export default function App() {
                                   </div>
                                 </li>
                               )}
-                              {syncReport.error.includes('Illegal spreadsheet id') && (
+                              {syncReport.isPermissionError && (
+                                <li className="text-red-700 font-bold bg-red-50 p-2 rounded border border-red-200">
+                                  <strong>FATAL: DATABASE PERMISSION ERROR</strong>
+                                  <div className="mt-1 font-normal opacity-80 text-[10px]">
+                                    • Your user document may not exist in Firestore.<br/>
+                                    • <strong>Fix:</strong> Logout and login again using "admin" / "Admin@2026" to ensure your admin profile is bootstrapped.
+                                  </div>
+                                </li>
+                              )}
+                              {syncReport.error?.includes('Illegal spreadsheet id') && (
                                 <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
                                   CRITICAL: Paste ONLY the ID (or use the Foolproof template below).
                                 </li>
                               )}
-                              {syncReport.error.includes('TypeError') && (
+                              {syncReport.error?.includes('TypeError') && (
                                 <li><strong>Script Failing:</strong> Your script code is crashing. Use the template below.</li>
                               )}
                             </ul>
@@ -523,6 +567,13 @@ export default function App() {
 function doGet() {
   try {
     var raw = 'ID_OR_URL_HERE';
+    if (raw === 'ID_OR_URL' + '_HERE') {
+      return ContentService.createTextOutput(JSON.stringify({ 
+        error: 'ID_OR_URL_HERE found', 
+        details: 'You forgot to replace "ID_OR_URL_HERE" with your actual Spreadsheet ID in the Apps Script code.' 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
     var sid = raw;
     if (raw.indexOf('docs.google.com') !== -1) {
       var match = raw.match(/\\/d\\/([a-zA-Z0-9-_]+)/);
@@ -532,17 +583,37 @@ function doGet() {
     var ss = SpreadsheetApp.openById(sid);
     var sheet = ss.getSheets()[0];
     var data = sheet.getDataRange().getValues();
-    var headers = data[0].map(function(h) { return String(h).toLowerCase().replace(/[\\s_]/g, ''); });
+    
+    // SMART HEADER DISCOVERY
+    var headerRow = 0;
+    for (var r = 0; r < Math.min(data.length, 20); r++) {
+      var rowText = data[r].join(" ").toLowerCase();
+      if (rowText.indexOf("mother") !== -1 || rowText.indexOf("picme") !== -1 || rowText.indexOf("name") !== -1 || rowText.indexOf("id") !== -1) {
+        headerRow = r;
+        break;
+      }
+    }
+    
+    var rawHeaders = data[headerRow];
+    var headers = rawHeaders.map(function(h) { 
+      return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); 
+    });
     
     var results = [];
-    for (var i = 1; i < data.length; i++) {
+    for (var i = headerRow + 1; i < data.length; i++) {
       var obj = {};
       var hasVal = false;
       for (var j = 0; j < headers.length; j++) {
-        obj[headers[j]] = data[i][j];
-        if (data[i][j] !== "") hasVal = true;
+        var cell = data[i][j];
+        if (headers[j]) {
+          obj[headers[j]] = cell;
+          if (cell !== "" && cell !== null && cell !== undefined) hasVal = true;
+        }
       }
-      if (hasVal) results.push(obj);
+      if (hasVal) {
+        obj._row = i + 1;
+        results.push(obj);
+      }
     }
     
     return ContentService.createTextOutput(JSON.stringify(results))

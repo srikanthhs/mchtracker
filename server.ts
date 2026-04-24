@@ -130,9 +130,21 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error('[API] Proxy Crash:', error);
+      
+      let message = 'Proxy Connection Failed';
+      let details = error.message;
+
+      if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+        message = 'Google Connection Timeout';
+        details = 'The request to Google Apps Script took too long (over 25s). Check if your script is processing too much data.';
+      } else if (error.message.includes('ENOTFOUND') || error.message.includes('EAI_AGAIN')) {
+        message = 'DNS Search Failed';
+        details = 'Could not resolve script.google.com. This might be a temporary network issue in the container.';
+      }
+
       res.status(500).json({ 
-        error: 'Proxy Connection Failed', 
-        details: error.message 
+        error: message, 
+        details: details 
       });
     }
   });
