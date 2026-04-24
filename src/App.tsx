@@ -136,8 +136,13 @@ export default function App() {
       }
       setLoading(false);
       setDbStatus('online');
-    }, (err) => {
-      console.error("Firestore Listen Errror", err);
+    }, (err: any) => {
+      console.error("Firestore Listen Error", err);
+      if (err.message?.includes('index')) {
+        const linkMatch = err.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+        const link = linkMatch ? linkMatch[0] : null;
+        alert(`CRITICAL: Database Index Missing.\n\nThe filtered view requires a Firestore index. ${link ? "Please click this link in a new tab: " + link : "Check browser console for the index creation link."}`);
+      }
       setDbStatus('error');
     });
 
@@ -161,14 +166,18 @@ export default function App() {
         await setDoc(doc(db, 'users', user.id), {
           name: user.name,
           role: user.role,
-          block: user.block || null,
+          block: user.block ? String(user.block).trim().toUpperCase() : null,
           active: true,
           lastLogin: new Date()
         }, { merge: true });
         
+        const normalizedUser = { 
+          ...user, 
+          block: user.block ? String(user.block).trim().toUpperCase() : null 
+        };
         // 2. ONLY set user state AFTER successful profile sync
-        setCurrentUser(user);
-        sessionStorage.setItem('hrp_session', JSON.stringify(user));
+        setCurrentUser(normalizedUser);
+        sessionStorage.setItem('hrp_session', JSON.stringify(normalizedUser));
       } catch (e: any) { 
         console.error("Profile auto-sync failed", e);
         const details = e.message?.includes('permission') 

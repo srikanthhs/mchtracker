@@ -35,17 +35,11 @@ service cloud.firestore {
     // --- COLLECTIONS ---
 
     match /users/{userId} {
-      allow get: if true; // Allow lookup during login
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() || (userId == 'admin'); // Allow bootstrap
-      allow update: if (isSignedIn() && userId == request.auth.uid) 
-                    || (existing() == null && userId == 'admin'); 
-      allow delete: if false;
+      allow read, write: if true;
     }
 
     match /patients/{patientId} {
-      allow get, list: if true; // Allow reading for analytics
-      allow create, update, delete: if isSignedIn() || (request.auth == null && patientId.size() > 0);
+      allow read, write: if true;
     }
 
     match /alert_schedules/{scheduleId} {

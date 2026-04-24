@@ -23,6 +23,7 @@ export function fmtDate(date: string | null | undefined): string {
 export function daysUntil(dateStr: string | null | undefined): number | null {
   if (!dateStr) return null;
   const target = new Date(dateStr);
+  if (isNaN(target.getTime())) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   target.setHours(0, 0, 0, 0);

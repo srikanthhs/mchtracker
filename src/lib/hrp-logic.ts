@@ -16,8 +16,13 @@ export function getRiskCat(score: number): RiskCategory {
 export function getNextVisitDate(rec: PatientRecord): string | null {
   if (rec.lv) {
     const last = new Date(rec.lv);
+    if (isNaN(last.getTime())) return null;
     const next = new Date(last.getTime() + 15 * 86400000);
-    return next.toISOString().split('T')[0];
+    try {
+      return next.toISOString().split('T')[0];
+    } catch {
+      return null;
+    }
   }
   return null;
 }
