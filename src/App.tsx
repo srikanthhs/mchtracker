@@ -477,12 +477,15 @@ export default function App() {
                          </div>
                        )}
                        
-                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment')) && (
+                       {syncReport.error && (syncReport.error.includes('TypeError') || syncReport.error.includes('404') || syncReport.error.includes('Script Deployment') || syncReport.error.includes('Illegal spreadsheet id')) && (
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
                             <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
                             <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
                               {syncReport.error.includes('404') && (
                                 <li><strong>404 Not Found:</strong> Google cannot find your script. Ensure you have <strong>Deployed as Web App</strong> and are using the URL ending in <code>/exec</code>.</li>
+                              )}
+                              {syncReport.error.includes('Illegal spreadsheet id') && (
+                                <li className="text-red-600"><strong>CRITICAL ERROR:</strong> You pasted a full URL instead of a Spreadsheet ID. <strong>Google Apps Script needs only the ID</strong> (the long string between /d/ and /edit).</li>
                               )}
                               {syncReport.error.includes('TypeError') && (
                                 <li><strong>TypeError:</strong> Your Apps Script is crashing. Use <code>SpreadsheetApp.openById("SHEET_ID")</code> instead of <code>getActiveSpreadsheet()</code>.</li>
@@ -493,31 +496,45 @@ export default function App() {
                             </ul>
                             <button 
                               onClick={() => {
-                                const code = `function doGet() {
-  // 1. REPLACEMENT: Use your actual Spreadsheet ID from the URL
-  var ss = SpreadsheetApp.openById('PASTE_YOUR_SHEET_ID_HERE');
-  
-  // 2. Get the first sheet (usually names 'Sheet1')
-  var sheet = ss.getSheets()[0];
-  var data = sheet.getDataRange().getValues();
-  
-  // 3. Convert rows to JSON objects using headers
-  var headers = data[0];
-  var results = [];
-  for (var i = 1; i < data.length; i++) {
-    var obj = {};
-    for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+                                const code = `/**
+ * GOOGLE APPS SCRIPT TEMPLATE
+ * 1. Open your Google Sheet
+ * 2. Copy the ID from the URL (the long string between /d/ and /edit)
+ * 3. Extensions > Apps Script
+ * 4. Paste this code and REPLACE 'YOUR_ID_HERE'
+ * 5. Deploy > New Deployment > Web App > Access: Anyone
+ */
+
+function doGet() {
+  try {
+    // PASTE ONLY THE ID HERE, NOT THE FULL URL
+    var ss = SpreadsheetApp.openById('YOUR_SPREADSHEET_ID_HERE');
+    var sheet = ss.getSheets()[0];
+    var data = sheet.getDataRange().getValues();
+    
+    var headers = data[0];
+    var results = [];
+    
+    for (var i = 1; i < data.length; i++) {
+      var obj = {};
+      var hasData = false;
+      for (var j = 0; j < headers.length; j++) {
+        var val = data[i][j];
+        obj[headers[j]] = val;
+        if (val !== "" && val !== null) hasData = true;
+      }
+      if (hasData) results.push(obj);
     }
-    results.push(obj);
+    
+    return ContentService.createTextOutput(JSON.stringify(results))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (e) {
+    return ContentService.createTextOutput(JSON.stringify({ error: e.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
-  
-  // 4. Return as JSON
-  return ContentService.createTextOutput(JSON.stringify(results))
-    .setMimeType(ContentService.MimeType.JSON);
 }`;
                                 navigator.clipboard.writeText(code);
-                                alert('Template Script copied! Paste this into Google Apps Script and update the Sheet ID.');
+                                alert('Modern Script Template copied! Paste this into Google Apps Script.\n\nIMPORTANT: Use ONLY the ID extracted from the URL.');
                               }}
                               className="text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-md font-bold hover:bg-red-700 transition-colors mt-1"
                             >
