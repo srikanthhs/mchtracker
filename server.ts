@@ -27,14 +27,16 @@ async function startServer() {
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      version: '1.0.7', 
-      node_version: process.version,
+      version: '1.0.8', 
+      node_env: process.env.NODE_ENV || 'development',
       time: new Date().toISOString() 
     });
   });
 
   // Proxy route for Google Sheets to bypass CORS
-  app.get(['/api/sheet-data', '/api/sheet-data/'], async (req, res) => {
+  // Simplified path for reliability
+  app.get('/api/sheet-data', async (req, res) => {
+    console.log(`[API_HIT] /api/sheet-data reached. Query:`, req.query);
     const defaultUrl = 'https://script.google.com/macros/s/AKfycbyMYeC2JL8HW23VUkLY2aYkb7q8KM5CZJe2hGm1TSkuGu0Vpn-PabBMFkALJ2dnZ7VUDA/exec';
     
     // Safety check for query param

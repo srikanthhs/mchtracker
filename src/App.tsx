@@ -126,10 +126,16 @@ export default function App() {
 
     const unsubscribePatients = onSnapshot(qP, (snap) => {
       setDbStatus('syncing');
+      console.log(`[FIRESTORE] Snapshot received. Count: ${snap.size}`);
       const data: PatientRecord[] = [];
-      snap.forEach(doc => data.push({ id: doc.id, ...doc.data() } as PatientRecord));
+      snap.forEach(doc => {
+        const d = doc.data();
+        data.push({ id: doc.id, ...d } as PatientRecord);
+      });
+      console.log(`[FIRESTORE] Data processed: ${data.length} records.`);
       
       if (data.length === 0) {
+        console.warn('[FIRESTORE] No records found matching the current query.');
         setPatients([]);
       } else {
         setPatients(data);
@@ -497,6 +503,17 @@ export default function App() {
                          <div className="mt-3 p-3 bg-white rounded-lg border border-red-200 space-y-2">
                             <p className="text-[10px] font-bold text-red-500 uppercase tracking-tight">Sync Diagnostic Help:</p>
                             <ul className="text-[11px] text-slate-600 list-disc pl-4 space-y-1">
+                               {syncReport.error?.includes('404') && (
+                                 <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
+                                   <strong>CRITICAL: ENDPOINT NOT FOUND (404)</strong>
+                                   <div className="mt-1 font-normal opacity-80 text-[10px]">
+                                     The server returned a 404. This could be:
+                                     <br/>• The Google Script URL is invalid or deleted.
+                                     <br/>• The Script is not deployed as a "Web App" for "Anyone".
+                                     <br/>• Failed URL: <code className="bg-red-100 text-[9px] px-1">{syncReport.failingUrl || 'Default'}</code>
+                                   </div>
+                                 </li>
+                               )}
                                {syncReport.error?.includes('Proxy') && (
                                  <li className="text-red-700 font-bold border-l-2 border-red-500 pl-2">
                                    <strong>CONNECTION ERROR:</strong> The server failed to reach Google Apps Script. 

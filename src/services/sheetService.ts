@@ -5,8 +5,11 @@ const SHEET_URL = '/api/sheet-data';
 export async function fetchSheetData(customUrl?: string): Promise<any[]> {
   try {
     const url = customUrl ? `${SHEET_URL}?url=${encodeURIComponent(customUrl)}` : SHEET_URL;
-    console.log(`[CLIENT] Fetching sheet data via proxy: ${url}`);
-    const response = await fetch(url);
+    console.log(`[CLIENT] Fetching sheet data via: ${window.location.origin}${url}`);
+    
+    // Add a cache-busting timestamp to bypass any intermediate caches
+    const finalUrl = `${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+    const response = await fetch(finalUrl);
     const contentType = response.headers.get('content-type') || '';
     
     // Check for SPA fallback (if server returns index.html for a missing API route)
