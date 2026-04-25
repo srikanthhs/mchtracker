@@ -65,11 +65,11 @@ export const AlertScheduler: React.FC<AlertSchedulerProps> = ({ patients, onClos
   const handleAddSchedule = async () => {
     if (!newSched.date) return;
     
-    const alert = MSG_ALERTS[newSched.alertIdx];
+    const alertInfo = MSG_ALERTS[newSched.alertIdx];
     const sched: AlertSchedule = {
       id: Date.now().toString(),
       alertIdx: newSched.alertIdx,
-      type: alert.label,
+      type: alertInfo.label,
       date: newSched.date,
       block: newSched.block || undefined,
       risk: newSched.risk || undefined,
@@ -84,7 +84,7 @@ export const AlertScheduler: React.FC<AlertSchedulerProps> = ({ patients, onClos
       localStorage.setItem('hrp_schedules', JSON.stringify([...local, sched]));
     } catch (e) {
       console.error("Add failed", e);
-      alert("Failed to save to Firebase - saving locally");
+      window.alert("Failed to save to Firebase - saving locally");
       const local = JSON.parse(localStorage.getItem('hrp_schedules') || '[]');
       localStorage.setItem('hrp_schedules', JSON.stringify([...local, sched]));
     }
@@ -99,13 +99,13 @@ export const AlertScheduler: React.FC<AlertSchedulerProps> = ({ patients, onClos
   };
 
   const fireScheduledAlert = async (sched: AlertSchedule) => {
-    const alert = MSG_ALERTS[sched.alertIdx];
+    const alertInfo = MSG_ALERTS[sched.alertIdx];
     
     // Calculate targeting
     const active = patients.filter(r => r.ds !== 'Delivered' && r.ds !== 'Abortion' && r.ph && r.e);
     let targetPats = active.map(r => ({ r, d: daysUntil(r.e) }))
-      .filter(({ d }) => d !== null && alert.window !== null && d >= alert.days - alert.window && d <= alert.days + alert.window)
-      .map(({ r }) => ({ r, alert }));
+      .filter(({ d }) => d !== null && alertInfo.window !== null && d >= alertInfo.days - alertInfo.window && d <= alertInfo.days + alertInfo.window)
+      .map(({ r }) => ({ r, alert: alertInfo }));
 
     if (sched.block) targetPats = targetPats.filter(p => p.r.b === sched.block);
     if (sched.risk) {
@@ -114,11 +114,11 @@ export const AlertScheduler: React.FC<AlertSchedulerProps> = ({ patients, onClos
     }
 
     if (targetPats.length === 0) {
-      alert("No patients found for this schedule's criteria today.");
+      window.alert("No patients found for this schedule's criteria today.");
       return;
     }
 
-    if (confirm(`Fire scheduled alert "${sched.type}" for ${targetPats.length} patients?`)) {
+    if (window.confirm(`Fire scheduled alert "${sched.type}" for ${targetPats.length} patients?`)) {
        // Mark as fired
        try {
          await updateDoc(doc(db, 'alert_schedules', sched.id), {

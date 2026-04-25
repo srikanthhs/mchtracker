@@ -90,7 +90,15 @@ export default function App() {
   const [showUsers, setShowUsers] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
-  const [queueData, setQueueData] = useState<{ recipients: PatientRecord[], message: string } | null>(null);
+  const [msgQueue, setMsgQueue] = useState<{ r: PatientRecord, alert: any }[]>([]);
+  const [msgLang, setMsgLang] = useState<'en' | 'ta'>('ta');
+
+  const clearFilters = () => {
+    setActiveBlock('');
+    setActivePHC('');
+    setActiveFilter('all');
+    setSearchQuery('');
+  };
 
   // 1. Check local session
   // Load initial session and sync auth
@@ -252,6 +260,8 @@ export default function App() {
       let skippedCount = 0;
       let unchangedCount = 0;
       const validationFailures: string[] = [];
+      const newRecordsPaths: string[] = [];
+      const updatedRecordsPaths: string[] = [];
       const rawSnippet = rawData.slice(0, 3);
 
       // Process in batches of 500 (Firestore limit)
@@ -268,15 +278,12 @@ export default function App() {
             const stableId = `${patient.n}-${patient.hu || 'nohu'}-${patient.b || 'noblock'}`.replace(/\s+/g, '-').toLowerCase();
             const id = patient.id || stableId || `row-${globalIndex}`;
             
-            const { isValid, validationErrors, ...recordData } = patient;
+            const { isValid, validationErrors, mappingDiagnostics, ...recordData } = patient;
             
-            // QUOTA OPTIMIZATION: Check if data has actually changed before writing
             const existing = patients.find(p => p.id === id);
             let hasChanged = true;
             
             if (existing) {
-              // Compare core fields to see if update is needed
-              // We skip comparison of 'updatedAt' as that's server side
               const keysToCompare = ['n', 'id', 'p', 'b', 'h', 'hu', 'e', 'a', 'ph', 'g', 'pa', 'pp', 'pt', 'lv', 'rm', 'as', 'ds'] as const;
               const diff = keysToCompare.some(key => {
                 const val1 = String(recordData[key as keyof typeof recordData] || '');
@@ -284,10 +291,12 @@ export default function App() {
                 return val1 !== val2;
               });
               
-              // Also compare risk factors (arrays)
               const riskDiff = JSON.stringify(recordData.r || []) !== JSON.stringify(existing.r || []);
-              
               hasChanged = diff || riskDiff;
+              
+              if (hasChanged) updatedRecordsPaths.push(recordData.n || id);
+            } else {
+              newRecordsPaths.push(recordData.n || id);
             }
 
             if (hasChanged) {
@@ -302,8 +311,8 @@ export default function App() {
             }
           } else {
             skippedCount++;
-            if (validationFailures.length < 10) {
-              validationFailures.push(`Row ${globalIndex + 1}: ${patient.validationErrors?.join(', ')}`);
+            if (validationFailures.length < 20) {
+              validationFailures.push(`Row ${globalIndex + 1} (${patient.n || 'Unknown'}): ${patient.validationErrors?.join(', ')}`);
             }
           }
         }
@@ -328,7 +337,8 @@ export default function App() {
         skipped: skippedCount, 
         unchanged: unchangedCount, 
         rawSnippet, 
-        validationFailures 
+        validationFailures,
+        details: `Sync Complete: ${newRecordsPaths.length} New, ${updatedRecordsPaths.length} Updated, ${unchangedCount} Unchanged.`
       });
     } catch (err: any) {
       console.error('Sheet Sync Error:', err);
@@ -363,29 +373,34 @@ export default function App() {
   }, [currentUser, authReady]);
 
   // Filtered List
+  const contextPatients = useMemo(() => {
+    return patients.filter(r => {
+      // 1. PHC Filter
+      if (activePHC && r.p !== activePHC) return false;
+      // 2. Block Filter (only if PHC not set)
+      if (!activePHC && activeBlock && r.b !== activeBlock) return false;
+      return true;
+    });
+  }, [patients, activeBlock, activePHC]);
+
   const filteredPatients = useMemo(() => {
     const queryLower = searchQuery.toLowerCase().trim();
     
-    return patients.filter(r => {
+    return contextPatients.filter(r => {
       // 1. Search Query Mask
       if (queryLower) {
         const searchableText = `${r.n} ${r.id} ${r.p} ${r.h} ${r.hu} ${r.b}`.toLowerCase();
         if (!searchableText.includes(queryLower)) return false;
       }
-      
-      // 2. PHC Filter
-      if (activePHC && r.p !== activePHC) return false;
-      
-      // 3. Block Filter (only if PHC not set)
-      if (!activePHC && activeBlock && r.b !== activeBlock) return false;
 
-      // 4. Status Filters
+      // 2. Status Filters
       if (activeFilter === 'active' && (r.ds === 'Delivered' || r.ds === 'Abortion')) return false;
       if (activeFilter === 'delivered' && r.ds !== 'Delivered') return false;
+      if (activeFilter === 'crit' && !(r.r && r.r.length >= 3)) return false; // Basic heuristic for crit if logic not available here
       
       return true;
     });
-  }, [patients, searchQuery, activeFilter, activeBlock, activePHC]);
+  }, [contextPatients, searchQuery, activeFilter]);
 
   useEffect(() => {
     console.log(`[UI_STATE] Patients: ${patients.length}, Filtered: ${filteredPatients.length}`);
@@ -475,7 +490,9 @@ export default function App() {
                </div>
                <div className="hidden md:block text-left">
                   <p className="text-[11px] font-bold text-on-surface leading-none">{currentUser.name}</p>
-                  <p className="text-[9px] text-on-surface-variant font-medium uppercase tracking-wider">{currentUser.role}</p>
+                  <p className="text-[9px] text-on-surface-variant font-medium uppercase tracking-wider">
+                     {currentUser.role} {currentUser.block ? `· ${currentUser.block}` : ''}
+                   </p>
                </div>
              </div>
              
@@ -494,12 +511,66 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth h-full">
-           <Dashboard 
-             data={patients} 
-             announcements={announcements}
-             filterMode={activeFilter}
-             onFilterClick={setActiveFilter}
-           />
+           {loading && (
+             <div className="flex flex-col items-center justify-center py-20 animate-pulse">
+                <RefreshCw className="animate-spin text-primary mb-4" size={32} />
+                <p className="text-sm font-bold text-on-surface-variant uppercase tracking-widest">Loading Secure Database...</p>
+             </div>
+           )}
+
+           {!loading && patients.length === 0 && (
+             <div className="bg-amber-50 border border-amber-100 p-6 rounded-[24px] flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="flex items-center gap-4 text-center md:text-left">
+                   <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                      <Database size={24} />
+                   </div>
+                   <div>
+                      <h3 className="text-base font-bold text-amber-900">Patient Registry Empty</h3>
+                      <p className="text-sm text-amber-700/80">The district database is currently empty. Sync from Google Sheets to populate records.</p>
+                   </div>
+                </div>
+                <button 
+                  onClick={() => handleSheetSync()}
+                  disabled={syncing}
+                  className="bg-amber-600 text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-md hover:bg-amber-700 active:scale-95 transition-all flex items-center gap-2"
+                >
+                  {syncing ? <RefreshCw className="animate-spin" size={16} /> : <Cloud size={16} />}
+                  Sync District Data
+                </button>
+             </div>
+           )}
+
+           {!loading && patients.length > 0 && contextPatients.length === 0 && (
+             <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-[24px] flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden">
+                <div className="flex items-center gap-4 text-center md:text-left">
+                   <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                      <Search size={24} />
+                   </div>
+                   <div>
+                      <h3 className="text-base font-bold text-indigo-900">Found {patients.length} records, but current filter is empty</h3>
+                      <p className="text-sm text-indigo-700/80">You are currently filtering by {activePHC || activeBlock}. No records match this location.</p>
+                   </div>
+                </div>
+                <button 
+                  onClick={clearFilters}
+                  className="bg-indigo-600 text-white px-6 py-2.5 rounded-full text-sm font-bold shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                >
+                  Clear All Filters
+                </button>
+             </div>
+           )}
+
+           {!loading && (
+             <Dashboard 
+               data={contextPatients} 
+               announcements={announcements}
+               filterMode={activeFilter}
+               onFilterClick={setActiveFilter}
+               scopeName={activePHC || activeBlock || 'District'}
+               isSyncing={syncing}
+               lastSynced={lastSynced}
+             />
+           )}
 
            {currentUser?.role === 'admin' && (
              <div className="bg-white p-6 rounded-xl border border-border shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -818,19 +889,19 @@ function doGet() {
          <MessagingCentre 
            patients={patients} 
            onClose={() => setShowMsg(false)} 
-           onQueue={(recipients, message) => {
-             setQueueData({ recipients, message });
+           openGoogleMsgQueue={(selected) => {
+             setMsgQueue(selected);
              setShowQueue(true);
              setShowMsg(false);
            }}
          />
        )}
 
-       {showQueue && queueData && (
+       {showQueue && msgQueue.length > 0 && (
          <GoogleMsgQueue 
-           recipients={queueData.recipients}
-           message={queueData.message}
+           queue={msgQueue}
            onClose={() => setShowQueue(false)}
+           msgLang={msgLang}
          />
        )}
 
@@ -838,8 +909,8 @@ function doGet() {
          <AlertScheduler 
            patients={patients} 
            onClose={() => setShowSched(false)}
-           openGoogleMsgQueue={(recipients, message) => {
-             setQueueData({ recipients, message });
+           openGoogleMsgQueue={(selected) => {
+             setMsgQueue(selected);
              setShowQueue(true);
            }}
          />

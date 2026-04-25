@@ -5,11 +5,12 @@ import { cn, fmtDate, daysUntil } from '@/src/lib/utils';
 import { calcScore, getRiskCat, getVisitStatus } from '@/src/lib/hrp-logic';
 import { RISK_WEIGHTS } from '@/src/constants';
 import { Badge } from './ui/Cards';
-import { X, Phone, MapPin, Calendar, Activity, Info, Edit3, User, Save, ListFilter, Check, ChevronRight } from 'lucide-react';
+import { X, Phone, MapPin, Calendar, Activity, Info, Edit3, User, Save, ListFilter, Check, ChevronRight, MessageSquare, Plus, Clock, AlertCircle } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 import { validatePatientData } from '../services/sheetService';
+import { ContactLog } from '../types';
 
 interface DrawerProps {
   patient: PatientRecord | null;
@@ -21,12 +22,19 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<PatientRecord>>({});
   const [saving, setSaving] = useState(false);
+  const [showAddLog, setShowAddLog] = useState(false);
+  const [newLog, setNewLog] = useState<Partial<ContactLog>>({
+    type: 'Call',
+    date: new Date().toISOString(),
+    outcome: 'Successful'
+  });
 
   useEffect(() => {
     if (patient) {
       setFormData({ ...patient });
     }
     setIsEditing(false);
+    setShowAddLog(false);
   }, [patient]);
 
   if (!patient) return null;
@@ -59,6 +67,35 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
     }
   };
 
+  const handleAddContactLog = async () => {
+    if (!patient.id) return;
+    if (!newLog.outcome) return;
+
+    setSaving(true);
+    try {
+      const patientRef = doc(db, 'patients', patient.id);
+      const logEntry: ContactLog = {
+        id: Date.now().toString(),
+        date: newLog.date || new Date().toISOString(),
+        type: newLog.type as any || 'Call',
+        outcome: newLog.outcome || 'Successful',
+        remarks: newLog.remarks || '',
+        performedBy: 'Staff'
+      };
+
+      await updateDoc(patientRef, {
+        cl: arrayUnion(logEntry)
+      });
+      
+      setShowAddLog(false);
+      setNewLog({ type: 'Call', date: new Date().toISOString(), outcome: 'Successful' });
+    } catch (err: any) {
+      alert('Failed to add log: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const DetailItem = ({ label, value, icon: Icon }: any) => (
     <div className="bg-gray-50 rounded-xl p-3.5 flex flex-col gap-1 border border-gray-100/50">
       <div className="flex items-center gap-1.5 opacity-60">
@@ -74,7 +111,7 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
       <label className="text-[10px] font-bold text-slate-400 border-b border-border pb-1 tracking-widest uppercase block">{label} {subLabel && <span className="text-indigo-400 lowercase italic">({subLabel})</span>}</label>
       <input 
         type={type}
-        value={formData[name as keyof PatientRecord] || ''}
+        value={(formData[name as keyof PatientRecord] as any) || ''}
         onChange={(e) => setFormData({ ...formData, [name]: type === 'number' ? Number(e.target.value) : e.target.value })}
         className="w-full px-4 py-2.5 bg-slate-50 border border-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
       />
@@ -225,6 +262,105 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
                       ))
                     ) : (
                       <div className="text-center py-4 text-xs text-slate-400 italic">No risk flags recorded</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contact Log Section */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-border pb-2">
+                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Contact & Follow-up History</h3>
+                    <button 
+                      onClick={() => setShowAddLog(!showAddLog)}
+                      className="text-[10px] font-bold text-indigo-600 flex items-center gap-1 hover:underline uppercase tracking-wider"
+                    >
+                      <Plus size={12} /> {showAddLog ? 'Cancel' : 'Add Log'}
+                    </button>
+                  </div>
+
+                  {showAddLog && (
+                    <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-3 animate-in slide-in-from-top-2 duration-300">
+                       <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                             <label className="text-[9px] font-bold text-indigo-600 uppercase">Type</label>
+                             <select 
+                               value={newLog.type}
+                               onChange={(e) => setNewLog({...newLog, type: e.target.value as any})}
+                               className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs outline-none"
+                             >
+                               <option value="Call">Phone Call</option>
+                               <option value="SMS">SMS Message</option>
+                               <option value="Visit">Home Visit</option>
+                             </select>
+                          </div>
+                          <div className="space-y-1">
+                             <label className="text-[9px] font-bold text-indigo-600 uppercase">Outcome</label>
+                             <select 
+                               value={newLog.outcome}
+                               onChange={(e) => setNewLog({...newLog, outcome: e.target.value})}
+                               className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs outline-none"
+                             >
+                               <option value="Successful">Successful</option>
+                               <option value="No Answer">No Answer</option>
+                               <option value="Follow-up Req">Follow-up Req</option>
+                               <option value="Declined">Declined</option>
+                             </select>
+                          </div>
+                       </div>
+                       <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-indigo-600 uppercase">Remarks (Optional)</label>
+                          <input 
+                            type="text"
+                            placeholder="Brief details..."
+                            value={newLog.remarks || ''}
+                            onChange={(e) => setNewLog({...newLog, remarks: e.target.value})}
+                            className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs outline-none"
+                          />
+                       </div>
+                       <button 
+                         onClick={handleAddContactLog}
+                         disabled={saving}
+                         className="w-full py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                       >
+                         {saving ? <Activity className="animate-spin" size={14} /> : <Check size={14} />}
+                         Record Contact Attempt
+                       </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {patient.cl && patient.cl.length > 0 ? (
+                      [...patient.cl].reverse().map((log, i) => (
+                        <div key={log.id || i} className="flex gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:shadow-sm transition-all group">
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                            log.type === 'SMS' ? "bg-blue-50 text-blue-500" : 
+                            log.type === 'Visit' ? "bg-amber-50 text-amber-500" :
+                            "bg-emerald-50 text-emerald-500"
+                          )}>
+                             {log.type === 'SMS' ? <MessageSquare size={14} /> : 
+                              log.type === 'Visit' ? <MapPin size={14} /> :
+                              <Phone size={14} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[11px] font-bold text-slate-800">{log.type} - {log.outcome}</span>
+                              <span className="text-[9px] font-medium text-slate-400 font-mono">
+                                {new Date(log.date).toLocaleDateString()} {new Date(log.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 leading-tight">
+                              {log.remarks || 'No additional remarks provided.'}
+                              <span className="text-[9px] block mt-1 opacity-40 font-bold uppercase">Recorded by {log.performedBy || 'System'}</span>
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-slate-50/50 rounded-2xl p-6 border border-dashed border-slate-200 text-center">
+                        <Clock size={20} className="mx-auto text-slate-300 mb-2" />
+                        <p className="text-[11px] text-slate-400 italic">No contact attempts recorded yet.</p>
+                      </div>
                     )}
                   </div>
                 </div>

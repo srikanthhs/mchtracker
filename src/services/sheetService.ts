@@ -122,58 +122,68 @@ export function validatePatientData(data: Partial<PatientRecord>): { isValid: bo
  * Maps raw sheet data to the PatientRecord format using fuzzy key matching.
  * Handles common variations like "Mother Name", "mother_name", "MotherName", etc.
  */
-export function mapSheetToPatient(raw: any): Partial<PatientRecord> & { isValid: boolean; validationErrors: string[] } {
+export function mapSheetToPatient(raw: any): Partial<PatientRecord> & { isValid: boolean; validationErrors: string[]; mappingDiagnostics?: any } {
+  const diagnostics: any = { missing: [], found: {} };
+
   // Helper to find value from any potential key variant
-  const getVal = (variants: string[]) => {
+  const getVal = (variants: string[], fieldName: string) => {
     // Normalize all search variants to only include a-z0-9
     const normalizedVariants = variants.map(v => v.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
     // 1. Try exact matches first
     for (const v of variants) {
-      if (raw[v] !== undefined) return raw[v];
+      if (raw[v] !== undefined && raw[v] !== null && raw[v] !== '') {
+        diagnostics.found[fieldName] = v;
+        return raw[v];
+      }
     }
 
     // 2. Try normalized matches
     for (const normalizedV of normalizedVariants) {
       for (const [key, val] of Object.entries(raw)) {
         const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (normalizedKey === normalizedV) return val;
+        if (normalizedKey === normalizedV && val !== undefined && val !== null && val !== '') {
+          diagnostics.found[fieldName] = key;
+          return val;
+        }
       }
     }
+    
+    diagnostics.missing.push(fieldName);
     return undefined;
   };
 
-  const nameVariants = [
+  const nameVal = getVal([
     'MotherName', 'Mother Name', 'Name', 'PatientName', 'Patient Name', 
     'BeneficiaryName', 'Beneficiary Name', 'Mothers Name', 'Full Name', 'n'
-  ];
-  const nameVal = getVal(nameVariants);
-  const name = nameVal !== undefined ? String(nameVal) : 'Unknown';
+  ], 'Mother Name');
   
-  const ageRaw = getVal(['Age', 'a']);
+  const name = nameVal !== undefined ? String(nameVal).trim() : 'Unknown';
+  
+  const ageRaw = getVal(['Age', 'a', 'Mothers Age'], 'Age');
   const age = (ageRaw !== undefined && ageRaw !== '' && ageRaw !== null) ? Number(ageRaw) : null;
-  const edd = String(getVal(['EDD', 'EDDDate', 'e']) || '');
+  const edd = String(getVal(['EDD', 'EDDDate', 'e', 'Expected Delivery Date'], 'EDD') || '');
 
   const mapped: Partial<PatientRecord> = {
-    id: String(getVal(['PICME', 'PICMENo', 'PICME ID', 'id']) || ''),
+    id: String(getVal(['PICME', 'PICMENo', 'PICME ID', 'id', 'CTS ID', 'RCH ID'], 'PICME ID') || ''),
     n: name,
-    hu: String(getVal(['HusbandName', 'Husband Name', 'Husband', 'hu']) || ''),
-    b: String(getVal(['Block', 'b']) || '').trim().toUpperCase(),
-    p: String(getVal(['PHC', 'p']) || '').trim().toUpperCase(),
-    h: String(getVal(['HSC', 'h']) || '').trim().toUpperCase(),
+    hu: String(getVal(['HusbandName', 'Husband Name', 'Husband', 'hu'], 'Husband Name') || ''),
+    b: String(getVal(['Block', 'b'], 'Block') || '').trim().toUpperCase(),
+    p: String(getVal(['PHC', 'p', 'Primary Health Centre'], 'PHC') || '').trim().toUpperCase(),
+    h: String(getVal(['HSC', 'h', 'Health Sub Centre'], 'HSC') || '').trim().toUpperCase(),
     e: edd,
     a: age,
-    ph: String(getVal(['Phone', 'Contact', 'Mobile', 'ph']) || ''),
-    g: String(getVal(['Gravida', 'g']) || ''),
-    pa: String(getVal(['Para', 'pa']) || ''),
+    ph: String(getVal(['Phone', 'Contact', 'Mobile', 'ph', 'Mobile Number'], 'Phone') || ''),
+    g: String(getVal(['Gravida', 'g'], 'Gravida') || ''),
+    pa: String(getVal(['Para', 'pa'], 'Para') || ''),
     r: Array.isArray(raw.RiskFlags || raw.RiskFactors || raw.r) 
       ? (raw.RiskFlags || raw.RiskFactors || raw.r)
-      : (typeof (raw.r || raw.RiskFactors) === 'string' 
-          ? (raw.r || raw.RiskFactors).split(',').map((s: string) => s.trim()) 
+      : (typeof (raw.r || raw.RiskFactors || raw.RiskFlags) === 'string' 
+          ? (raw.r || raw.RiskFactors || raw.RiskFlags).split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0) 
           : []),
-    pp: String(getVal(['PlannedPlace', 'Planned Place', 'pp']) || ''),
-    rm: String(getVal(['Remarks', 'Notes', 'rm']) || ''),
-    ds: String(getVal(['DeliveryStatus', 'Status', 'ds']) || '')
+    pp: String(getVal(['PlannedPlace', 'Planned Place', 'pp'], 'Planned Place') || ''),
+    rm: String(getVal(['Remarks', 'Notes', 'rm'], 'Remarks') || ''),
+    ds: String(getVal(['DeliveryStatus', 'Status', 'ds'], 'Delivery Status') || '')
   };
 
   const { isValid, errors } = validatePatientData(mapped);
@@ -181,6 +191,7 @@ export function mapSheetToPatient(raw: any): Partial<PatientRecord> & { isValid:
   return {
     ...mapped,
     isValid,
-    validationErrors: errors
+    validationErrors: errors,
+    mappingDiagnostics: diagnostics
   };
 }

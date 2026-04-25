@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn, daysUntil } from '@/src/lib/utils';
 import { PatientRecord } from '@/src/types';
 import { 
@@ -151,14 +152,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="mx-6 my-4 h-[1px] bg-outline/30" />
 
-          <div className="px-6 py-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.15em] mb-1">Tools & Reports</div>
-          <button onClick={onShowAI} className="w-full flex items-center gap-3 px-4 py-2.5 mx-3 rounded-full text-[13px] text-purple-600 font-bold hover:bg-purple-50 transition-colors border-none cursor-pointer">
-            <Sparkles size={18} /> AI District Insights
+          {/* Location Filter Dropdown */}
+          <div className="px-6 py-4 space-y-3 bg-surface-variant/20 mx-4 rounded-3xl border border-outline/10">
+             <div className="flex items-center gap-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
+                <Target size={14} className="text-primary" />
+                Focus Analysis
+             </div>
+             
+             <div className="space-y-1">
+                <label className="text-[9px] font-bold text-on-surface-variant/60 uppercase ml-1">Select Block</label>
+                <select 
+                  value={activeBlock}
+                  onChange={(e) => onBlockChange(e.target.value)}
+                  className="w-full bg-white border border-outline/30 rounded-xl px-3 py-2 text-[13px] focus:ring-2 focus:ring-primary/20 outline-none text-on-surface cursor-pointer shadow-sm"
+                >
+                  <option value="">Entire District</option>
+                  {Object.keys(blockMap).sort().map(b => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+             </div>
+
+             <AnimatePresence>
+               {activeBlock && (
+                 <motion.div 
+                    initial={{ height: 0, opacity: 0 }} 
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1 overflow-hidden"
+                 >
+                    <label className="text-[9px] font-bold text-on-surface-variant/60 uppercase ml-1">Select Center / PHC</label>
+                    <select 
+                      value={activePHC}
+                      onChange={(e) => onPHCChange(activeBlock, e.target.value)}
+                      className="w-full bg-white border border-outline/30 rounded-xl px-3 py-2 text-[13px] focus:ring-2 focus:ring-primary/20 outline-none text-on-surface cursor-pointer shadow-sm"
+                    >
+                      <option value="">All PHCs in {activeBlock}</option>
+                      {[...blockMap[activeBlock]].sort().map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                 </motion.div>
+               )}
+             </AnimatePresence>
+          </div>
+
+          <div className="mx-6 my-4 h-[1px] bg-outline/30" />
+
+          <div className="px-6 py-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.15em] mb-1">Administrative Intelligence</div>
+          <button onClick={onShowAI} className="w-full flex items-center gap-3 px-6 py-3 text-[13px] text-primary font-bold hover:bg-primary/5 transition-all border-none cursor-pointer group">
+            <div className="w-8 h-8 rounded-lg bg-primary-container/30 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+              <Sparkles size={18} />
+            </div>
+            <span className="tracking-tight">District Intelligence Hub</span>
           </button>
-          <button onClick={onShowMsg} className="w-full flex items-center gap-3 px-4 py-2.5 mx-3 rounded-full text-[13px] text-indigo-600 font-bold hover:bg-indigo-50 transition-colors border-none cursor-pointer">
+          
+          <div className="mx-6 my-2 h-[1px] bg-outline/20" />
+
+          <div className="px-6 py-2 text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.15em] mb-1">Communications</div>
+          <button onClick={onShowMsg} className="w-full flex items-center gap-3 px-6 py-2 text-[13px] text-on-surface-variant font-bold hover:bg-surface-variant transition-colors border-none cursor-pointer">
             <Send size={18} /> Messaging Centre
           </button>
-          <button onClick={onShowSched} className="w-full flex items-center gap-3 px-4 py-2.5 mx-3 rounded-full text-[13px] text-orange-600 font-bold hover:bg-orange-50 transition-colors border-none cursor-pointer">
+          <button onClick={onShowSched} className="w-full flex items-center gap-3 px-6 py-2 text-[13px] text-on-surface-variant font-bold hover:bg-surface-variant transition-colors border-none cursor-pointer">
             <AlarmClock size={18} /> Alert Scheduler
           </button>
           

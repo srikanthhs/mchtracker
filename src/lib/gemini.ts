@@ -1,64 +1,80 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { PatientRecord } from "../types";
-import { calcScore } from "./hrp-logic";
+import { calcScore, isOverdue } from "./hrp-logic";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-2.0-flash",
+  generationConfig: {
+    temperature: 0.2, // Lower temperature for more factual analysis
+    topP: 0.8,
+    topK: 40,
+  }
+});
 
-export type InsightType = 'summary' | 'risk' | 'action' | 'pattern';
+export type InsightType = 'summary' | 'risk' | 'pattern' | 'intervention';
 
 export async function getDistrictInsights(patients: PatientRecord[], type: InsightType = 'summary') {
   const active = patients.filter(r => r.ds !== 'Delivered' && r.ds !== 'Abortion');
   const critical = active.filter(r => calcScore(r.r) >= 5);
+  const high = active.filter(r => { const s = calcScore(r.r); return s >= 3 && s < 5; });
   const blocks = [...new Set(patients.map(p => p.b))].sort();
   
   const blockStats = blocks.map(bl => {
     const bp = active.filter(r => r.b === bl);
+    const critCount = bp.filter(r => calcScore(r.r) >= 5).length;
     const odCount = bp.filter(r => isOverdue(r)).length;
-    return `${bl}: ${bp.length} active, ${odCount} overdue`;
-  }).join('; ');
+    const avgAge = bp.length > 0 ? (bp.reduce((sum, r) => sum + (r.a || 0), 0) / bp.length).toFixed(1) : 'N/A';
+    return `[${bl}: ${bp.length} ANC, ${critCount} Critical, ${odCount} Overdue, Avg Age ${avgAge}]`;
+  }).join(' ');
 
-  const topRisks = getTopRisks(patients, 8);
+  const topRisks = getTopRisks(active, 10);
+  
+  // Calculate age-wise risk
+  const teensCount = active.filter(r => (r.a || 0) < 20).length;
+  const advancedMaternalAge = active.filter(r => (r.a || 0) >= 35).length;
+
+  const context = `
+District: Mayiladuthurai, Tamil Nadu
+Snapshot:
+- Total Registered Mothers: ${patients.length}
+- Current Active ANC: ${active.length}
+- Critical Risk (Score 5+): ${critical.length} (${((critical.length/active.length)*100).toFixed(1)}%)
+- High Risk (Score 3-4): ${high.length}
+- Teenage ANC (<20): ${teensCount}
+- Advanced Maternal Age (35+): ${advancedMaternalAge}
+- Block-wise Metrics (ANC/Critical/Overdue): ${blockStats}
+- Frequent Risk Flags: ${topRisks}
+  `;
 
   const prompts: Record<InsightType, string> = {
-    summary: `You are a public health analyst for Mayiladuthurai District, Tamil Nadu. Provide a concise district HRP status summary in 5-6 bullet points.
+    summary: `${context}
+    You are a Senior Public Health Consultant. Provide a high-level executive summary for the District Collector.
+    - Highlight the most alarming metric immediately.
+    - Summarize the current maternal health burden.
+    - Identify the top 2 blocks requiring administrative focus.
+    - Keep it professional, data-driven, and under 5 bullet points. Use bolding for key figures.`,
 
-Data snapshot:
-- Total registered: ${patients.length}
-- Active pregnancies: ${active.length}
-- Critical risk (score >= 5): ${critical.length}
-- Block-wise: ${blockStats}
-- Top risk conditions: ${topRisks}
+    risk: `${context}
+    You are a Medical Risk Analyst. Perform a deep-dive into the high-risk cohorts.
+    - Correlate risk flags with block distribution.
+    - Identify if specific blocks have localized clusters of specific risks (e.g., Anemia in one block, PIH in another).
+    - Analyze the 'Overdue' follow-up trend and its potential impact on critical outcomes.
+    - Use tables or structured lists if helpful. Focus on the 'why' behind the numbers.`,
 
-Write bullet points in plain language suitable for a Collector's morning brief. Be direct and action-oriented.`,
+    pattern: `${context}
+    You are an Epidemiologist. Identify underlying maternal health patterns in Mayiladuthurai.
+    - Analyze the intersection of age (teen/advanced) and clinical risk scores.
+    - Look for geographical disparites in service delivery (Overdue rates vs Critical cases).
+    - Identify emerging trends that might lead to maternal morbidity if unaddressed.
+    - Suggest possible socio-economic or programmatic factors based on the data patterns.`,
 
-    risk: `You are a maternal health analyst. Analyse these high-risk pregnancy patterns for Mayiladuthurai District.
-
-Risk data:
-- Total active: ${active.length}
-- Critical (score >= 5): ${critical.length}
-- High (score 3-4): ${active.filter(r => { const s = calcScore(r.r); return s >= 3 && s < 5; }).length}
-- Top risk conditions: ${topRisks}
-- Block-wise active: ${blockStats}
-
-Provide: (1) Key risk patterns observed (2) Which blocks need immediate attention (3) Most common risk combinations to watch. Keep response structured and under 250 words.`,
-
-    action: `You are a district health programme manager. Generate specific action points for the HRP programme.
-
-Current Situation:
-- Active cases: ${active.length}
-- Critical risk cases: ${critical.length}
-- Block-wise status: ${blockStats}
-
-Generate 6-8 specific, numbered action points for the District Collector / CMHO to act on this week. Be specific about which blocks, timelines, and responsible officers where possible.`,
-
-    pattern: `You are an epidemiologist analysing high-risk pregnancy patterns in Mayiladuthurai District.
-
-- Total: ${patients.length} registered, ${active.length} active
-- Top risk conditions: ${topRisks}
-- Block distribution: ${blockStats}
-
-Identify: (1) Emerging patterns or clusters (2) Blocks with disproportionate risk burden (3) Any seasonal or programmatic insights (4) Recommendations for programme strengthening. Keep response under 200 words.`
+    intervention: `${context}
+    You are the District Health Programme Manager. Design a 7-day tactical intervention plan.
+    - Provide 5 specific, measurable actions for the Field Health functionaries.
+    - Target the 'Overdue' cases and 'Critical' cases with block-specific instructions.
+    - Suggest administrative directives for the CMHO/BMOs.
+    - Include a 'success metric' for each recommendation. Be tactical and precise.`
   };
 
   try {
@@ -66,13 +82,13 @@ Identify: (1) Emerging patterns or clusters (2) Blocks with disproportionate ris
     return result.response.text();
   } catch (error) {
     console.error("AI Insights Error:", error);
-    return "Unable to generate insights at this time. Please check district connectivity.";
+    return "### ⚠️ Intelligence Link Interrupted\nUnable to generate insights at this time. Please check district connectivity or API configuration.";
   }
 }
 
-function getTopRisks(patients: PatientRecord[], count: number = 3): string {
+function getTopRisks(patients: PatientRecord[], count: number = 5): string {
     const counts: Record<string, number> = {};
-    patients.flatMap(p => p.r).forEach(f => counts[f] = (counts[f] || 0) + 1);
+    patients.flatMap(p => p.r || []).forEach(f => counts[f] = (counts[f] || 0) + 1);
     return Object.entries(counts)
         .sort((a,b) => b[1] - a[1])
         .slice(0, count)

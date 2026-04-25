@@ -10,6 +10,15 @@ export interface AppUser {
   createdAt?: any;
 }
 
+export interface ContactLog {
+  id: string;
+  date: string;
+  outcome: string;
+  type: 'SMS' | 'Call' | 'Visit';
+  remarks?: string;
+  performedBy?: string;
+}
+
 export interface PatientRecord {
   id: string; // PICME No
   b: string;  // Block
@@ -34,6 +43,7 @@ export interface PatientRecord {
   fp?: string; // Family planning
   mo?: string; // Mentor OG
   mop?: string; // Mentor opinion
+  cl?: ContactLog[]; // Contact logs
 }
 
 export interface RiskCategory {

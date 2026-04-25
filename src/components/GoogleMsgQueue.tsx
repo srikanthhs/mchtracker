@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { X, MessageSquare, CheckCircle2, ChevronRight, SkipForward, ArrowRight } from 'lucide-react';
-import { PatientRecord } from '../types';
+import { X, MessageSquare, CheckCircle2, ChevronRight, SkipForward, ArrowRight, Activity, Send as SendIcon } from 'lucide-react';
+import { PatientRecord, ContactLog } from '../types';
 import { cn, fmtDate, daysUntil } from '../lib/utils';
+import { db } from '../lib/firebase';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 interface QueueItem {
   r: PatientRecord;
@@ -18,6 +20,7 @@ interface GoogleMsgQueueProps {
 export const GoogleMsgQueue: React.FC<GoogleMsgQueueProps> = ({ queue, onClose, msgLang }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sentIndices, setSentIndices] = useState<Set<number>>(new Set());
+  const [syncing, setSyncing] = useState(false);
 
   const item = queue[currentIndex];
   const total = queue.length;
@@ -43,9 +46,45 @@ export const GoogleMsgQueue: React.FC<GoogleMsgQueueProps> = ({ queue, onClose, 
     return `Dear ${r.n}, your next antenatal check-up is due. Please visit ${r.p || 'your PHC'} soon. Your expected delivery date is ${edd} (${d} days away). Carry your ANC card. -Mayiladuthurai District HRP`;
   };
 
-  const markSentAndNext = () => {
-    setSentIndices(prev => new Set(prev).add(currentIndex));
-    setCurrentIndex(prev => prev + 1);
+  const markSentAndNext = async () => {
+    if (!item.r.id) {
+       setSentIndices(prev => new Set(prev).add(currentIndex));
+       setCurrentIndex(prev => prev + 1);
+       return;
+    }
+
+    setSyncing(true);
+    try {
+      const patientRef = doc(db, 'patients', item.r.id);
+      const logEntry: ContactLog = {
+        id: Date.now().toString(),
+        date: new Date().toISOString(),
+        type: 'SMS',
+        outcome: 'Sent to App',
+        remarks: `Alert: ${item.alert.label}`,
+        performedBy: 'System'
+      };
+
+      await updateDoc(patientRef, {
+        cl: arrayUnion(logEntry)
+      });
+      
+      // Trigger SMS redirect
+      const num = String(item.r.ph || '').replace(/[^0-9]/g, '').slice(-10);
+      const msgText = buildMsg(item.r, item.alert);
+      const smsHref = `sms:+91${num}?body=${encodeURIComponent(msgText)}`;
+      window.location.href = smsHref;
+
+      setSentIndices(prev => new Set(prev).add(currentIndex));
+      setCurrentIndex(prev => prev + 1);
+    } catch (e) {
+      console.error("Failed to log contact", e);
+      // Still move to next even if log fails
+      setSentIndices(prev => new Set(prev).add(currentIndex));
+      setCurrentIndex(prev => prev + 1);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleSkip = () => {
@@ -137,16 +176,24 @@ export const GoogleMsgQueue: React.FC<GoogleMsgQueueProps> = ({ queue, onClose, 
               <p className="text-[10px] text-right text-slate-400">{msgText.length} characters</p>
            </div>
 
-           {/* Main Action */}
+            {/* Main Action */}
            <div className="pt-2 flex flex-col gap-3">
-              <a 
-                href={smsHref}
+              <button 
+                disabled={syncing}
                 onClick={markSentAndNext}
-                className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all"
+                className="flex items-center justify-center gap-3 w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                <Send size={20} />
-                Open Messages App
-              </a>
+                {syncing ? <Activity className="animate-spin" size={20} /> : (
+                  <>
+                    <SendIcon size={20} />
+                    <span>Process & Open Messages</span>
+                  </>
+                )}
+              </button>
+              
+              <div className="text-[10px] text-center text-slate-400 font-medium px-4">
+                 Note: Clicking button will log this attempt and open the SMS app on your device.
+              </div>
               
               <button 
                 onClick={handleSkip}
@@ -173,7 +220,3 @@ export const GoogleMsgQueue: React.FC<GoogleMsgQueueProps> = ({ queue, onClose, 
     </div>
   );
 };
-
-const Send = ({size}: {size: number}) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polyline points="22 2 15 22 11 13 2 9 22 2"/></svg>
-);

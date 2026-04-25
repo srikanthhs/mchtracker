@@ -9,7 +9,8 @@ import {
   PieChart, 
   Activity, 
   Info,
-  ChevronRight
+  ChevronRight,
+  ShieldAlert
 } from 'lucide-react';
 import { PatientRecord } from '../types';
 import { cn } from '../lib/utils';
@@ -22,10 +23,10 @@ interface AIInsightsProps {
 }
 
 const INSIGHT_OPTIONS: { id: InsightType, label: string, desc: string, icon: any, color: string, bg: string }[] = [
-  { id: 'summary', label: 'Briefing', desc: 'Collector-level summary', icon: Activity, color: 'text-purple-600', bg: 'bg-purple-50' },
-  { id: 'risk',    label: 'Risk Hub', desc: 'Condition & block distribution', icon: Target, color: 'text-red-600', bg: 'bg-red-50' },
-  { id: 'action',  label: 'Actions',  desc: 'Recommended interventions', icon: Zap,    color: 'text-orange-600', bg: 'bg-orange-50' },
-  { id: 'pattern', label: 'Patterns', desc: 'Epidemiological trends', icon: PieChart, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+  { id: 'summary',     label: 'Executive Brief', desc: 'Strategy & key metrics', icon: Activity, color: 'text-primary', bg: 'bg-primary-container/20' },
+  { id: 'risk',        label: 'Risk Analysis',   desc: 'Deep-dive assessments', icon: ShieldAlert, color: 'text-red-600', bg: 'bg-red-50' },
+  { id: 'intervention', label: 'Tactical Plan',   desc: 'Actionable interventions', icon: Zap, color: 'text-amber-600', bg: 'bg-amber-50' },
+  { id: 'pattern',     label: 'Epidemiology',    desc: 'Block-wise trends', icon: PieChart, color: 'text-indigo-600', bg: 'bg-indigo-50' },
 ];
 
 export const AIInsights: React.FC<AIInsightsProps> = ({ patients, onClose }) => {
@@ -38,39 +39,58 @@ export const AIInsights: React.FC<AIInsightsProps> = ({ patients, onClose }) => 
     if (content[type]) return;
     
     setLoading(true);
-    const text = await getDistrictInsights(patients, type);
-    setContent(prev => ({ ...prev, [type]: text }));
-    setLoading(false);
+    try {
+      const text = await getDistrictInsights(patients, type);
+      setContent(prev => ({ ...prev, [type]: text }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Run initial on mount if needed
+  // Run initial on mount
   React.useEffect(() => {
     runAnalysis('summary');
   }, []);
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div 
-        initial={{ scale: 0.95, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-        className="relative bg-white w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        className="absolute inset-0 bg-on-surface/40 backdrop-blur-[2px]" 
+        onClick={onClose} 
+      />
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0, y: 30 }} 
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        className="relative bg-surface w-full max-w-5xl h-[90vh] rounded-[32px] shadow-2xl flex flex-col overflow-hidden border border-outline/30"
       >
         {/* Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-purple-50/30">
-          <div className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white shadow-lg shadow-purple-200">
-                <Sparkles size={20} />
+        <div className="px-8 py-6 border-b border-outline/10 flex items-center justify-between bg-surface-variant/20">
+          <div className="flex items-center gap-4">
+             <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                <Sparkles size={24} />
              </div>
              <div>
-                <h2 className="text-lg font-black tracking-tight text-slate-900 leading-tight">AI District Insights</h2>
-                <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest leading-none mt-1">Real-time Gemini Analysis</p>
+                <h2 className="text-xl font-bold tracking-tight text-on-surface leading-tight">Maternal Intelligence Center</h2>
+                <div className="flex items-center gap-2 mt-1">
+                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                   <p className="text-[11px] text-on-surface-variant font-bold uppercase tracking-widest leading-none">Gemini 2.0 Real-time Cognitive Engine</p>
+                </div>
              </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white text-slate-400 Transition-colors"><X size={20} /></button>
+          <button 
+            onClick={onClose} 
+            className="w-10 h-10 rounded-full hover:bg-surface-variant flex items-center justify-center text-on-surface-variant transition-colors"
+          >
+            <X size={24} />
+          </button>
         </div>
 
-        {/* Tab Selection Cards */}
-        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-2 border-b border-slate-100 bg-slate-50/50">
+        {/* Dynamic Selection Tabs */}
+        <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4 border-b border-outline/10">
            {INSIGHT_OPTIONS.map(opt => {
              const isActive = activeType === opt.id;
              const Icon = opt.icon;
@@ -79,63 +99,71 @@ export const AIInsights: React.FC<AIInsightsProps> = ({ patients, onClose }) => 
                  key={opt.id}
                  onClick={() => runAnalysis(opt.id)}
                  className={cn(
-                   "group p-3 rounded-2xl border transition-all duration-300 text-left",
+                   "group p-4 rounded-[24px] border-2 transition-all duration-300 text-left relative overflow-hidden",
                    isActive 
-                    ? "bg-white border-purple-200 shadow-sm ring-2 ring-purple-500/10" 
-                    : "bg-transparent border-transparent hover:bg-white hover:border-slate-200"
+                    ? "bg-surface border-primary shadow-md ring-4 ring-primary/5" 
+                    : "bg-surface-variant/30 border-transparent hover:border-outline/40 hover:bg-surface"
                  )}
                >
-                 <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center mb-2 transition-colors", isActive ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-400 group-hover:bg-purple-50")}>
-                    <Icon size={16} />
+                 <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-colors", isActive ? "bg-primary text-white" : "bg-surface-variant text-on-surface-variant group-hover:bg-primary/10 group-hover:text-primary")}>
+                    <Icon size={20} />
                  </div>
-                 <div className={cn("text-[11px] font-black uppercase tracking-widest", isActive ? "text-slate-900" : "text-slate-400 group-hover:text-slate-600")}>
+                 <div className={cn("text-[13px] font-bold tracking-tight", isActive ? "text-on-surface" : "text-on-surface-variant group-hover:text-on-surface")}>
                     {opt.label}
                  </div>
-                 <div className="text-[10px] text-slate-400 font-medium leading-tight mt-0.5 opacity-70 group-hover:opacity-100">
+                 <div className="text-[11px] text-on-surface-variant/70 font-medium leading-tight mt-1">
                     {opt.desc}
                  </div>
+                 {isActive && (
+                    <div className="absolute top-0 right-0 p-2 opacity-20">
+                      <TrendingUp size={40} className="text-primary" />
+                    </div>
+                 )}
                </button>
              );
            })}
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto bg-white relative">
+        <div className="flex-1 overflow-y-auto bg-surface relative">
            <AnimatePresence mode="wait">
               {loading ? (
                 <motion.div 
                   key="loading"
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="absolute inset-0 flex flex-col items-center justify-center p-12 space-y-4"
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 flex flex-col items-center justify-center p-12"
                 >
-                   <div className="relative">
-                      <div className="w-16 h-16 border-4 border-purple-50 border-t-purple-600 rounded-full animate-spin" />
-                      <Sparkles size={24} className="absolute inset-0 m-auto text-purple-600 animate-pulse" />
+                   <div className="relative mb-6">
+                      <div className="w-20 h-20 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
+                      <Sparkles size={32} className="absolute inset-0 m-auto text-primary animate-pulse" />
                    </div>
-                   <div className="text-center">
-                      <p className="text-sm font-black text-slate-900 uppercase tracking-widest">Analysing District Register</p>
-                      <p className="text-xs text-slate-400 font-medium">Gemini 2.0 Flash is processing {patients.length} patient records...</p>
+                   <div className="text-center max-w-sm">
+                      <p className="text-lg font-bold text-on-surface tracking-tight">Synthesizing District Data</p>
+                      <p className="text-sm text-on-surface-variant font-medium mt-1">Applying medical NLP models to {patients.length} active maternal health records...</p>
                    </div>
                 </motion.div>
               ) : (
                 <motion.div 
                   key={activeType}
-                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  className="p-8 md:p-10 max-w-3xl mx-auto"
+                  initial={{ opacity: 0, y: 15 }} 
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-10 md:p-14 max-w-4xl mx-auto"
                 >
-                   <div className="markdown-body prose prose-slate prose-purple max-w-none">
+                   <div className="markdown-body prose prose-slate max-w-none prose-p:text-on-surface-variant prose-headings:text-on-surface prose-strong:text-primary prose-li:text-on-surface-variant">
                       <ReactMarkdown>{content[activeType] || ''}</ReactMarkdown>
                    </div>
                    
-                   {/* Recommendation Footer */}
-                   <div className="mt-12 p-6 bg-slate-50 rounded-3xl border border-slate-100 flex gap-4">
-                      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-purple-600 shadow-sm shrink-0">
-                         <Info size={18} />
+                   {/* Strategic Advisory Note */}
+                   <div className="mt-16 p-8 bg-primary-container/10 rounded-[32px] border border-primary/10 flex gap-6 items-start">
+                      <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-primary shadow-sm shrink-0">
+                         <Info size={24} />
                       </div>
                       <div>
-                         <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-1">Methodology Note</h4>
-                         <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                            This analysis uses the latest DPH risk weightage criteria. Insights are derived from current snapshot data and are intended for administrative decision support only. Clinical decisions should be verified with individual ANC records.
+                         <h4 className="text-sm font-bold text-on-surface uppercase tracking-widest mb-2">Health Policy Advisory</h4>
+                         <p className="text-sm text-on-surface-variant font-medium leading-relaxed">
+                            These insights are dynamically generated based on the current district register snapshot. While optimized for administrative intervention mapping, clinical protocols must follow established TN Health Department guidelines.
                          </p>
                       </div>
                    </div>
@@ -144,13 +172,17 @@ export const AIInsights: React.FC<AIInsightsProps> = ({ patients, onClose }) => 
            </AnimatePresence>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-100 flex items-center justify-between text-[9px] font-black text-slate-400 uppercase tracking-widest px-6 bg-slate-50/50">
-           <div className="flex items-center gap-2">
-              <TrendingUp size={12} />
-              District Administrative Dashboard Analytics
+        {/* Footer Bar */}
+        <div className="px-8 py-4 border-t border-outline/10 flex items-center justify-between bg-surface-variant/20">
+           <div className="flex items-center gap-2 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest">
+              <ShieldAlert size={14} className="text-primary" />
+              Mayiladuthurai District Maternal Surveillance System
            </div>
-           <span>AI generated · Dynamic Update</span>
+           <div className="flex items-center gap-4 text-[10px] font-bold text-on-surface-variant/60 uppercase">
+              <span>Model: Gemini 2.0 Flash</span>
+              <div className="w-[1px] h-3 bg-outline/30" />
+              <span>Auth: District Admin Approved</span>
+           </div>
         </div>
       </motion.div>
     </div>

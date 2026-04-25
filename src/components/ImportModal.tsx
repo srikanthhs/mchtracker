@@ -11,6 +11,7 @@ import {
   Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { mapSheetToPatient } from '../services/sheetService';
 
 interface ImportModalProps {
   onClose: () => void;
@@ -22,6 +23,8 @@ interface ImportModalProps {
 export const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, isSyncing, syncProgress }) => {
   const [dragActive, setDragActive] = useState(false);
   const [csvText, setCsvText] = useState('');
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   const parseCSV = (text: string) => {
     const lines = text.trim().split(/\r?\n/);
@@ -44,9 +47,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, isS
     if (!csvText.trim()) return;
     const data = parseCSV(csvText);
     if (data.length) {
-      await onImport(data);
-      onClose();
+      setPreviewData(data.slice(0, 5));
+      setShowPreview(true);
     }
+  };
+
+  const confirmImport = async () => {
+    const data = parseCSV(csvText);
+    await onImport(data);
+    onClose();
   };
 
   return (
@@ -54,24 +63,24 @@ export const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, isS
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div 
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col overflow-hidden text-slate-900"
+        className="relative bg-white w-full max-w-2xl rounded-[32px] shadow-2xl flex flex-col overflow-hidden text-slate-900"
       >
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50">
            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white">
                  <Upload size={20} />
               </div>
               <div>
-                 <h2 className="text-lg font-bold">Import Patient Data</h2>
-                 <p className="text-xs text-slate-500 font-medium">Upload CSV or paste spreadsheet data</p>
+                 <h2 className="text-lg font-bold">Import Data Bridge</h2>
+                 <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-widest">District Register Sync Gateway</p>
               </div>
            </div>
-           <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-50 text-slate-400 Transition-colors"><X size={20} /></button>
+           <button onClick={onClose} className="p-2 rounded-full hover:bg-white text-slate-400 Transition-colors"><X size={20} /></button>
         </div>
 
         <div className="p-8 space-y-8">
            {isSyncing ? (
-             <div className="py-12 flex flex-col items-center justify-center space-y-6">
+             <div className="py-12 flex flex-col items-center justify-center space-y-6 text-center">
                 <div className="relative">
                    <div className="w-20 h-20 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin" />
                    <Database size={24} className="absolute inset-0 m-auto text-emerald-600 animate-pulse" />
@@ -86,6 +95,46 @@ export const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, isS
                      initial={{ width: 0 }}
                      animate={{ width: `${(syncProgress.current/syncProgress.total)*100}%` }}
                    />
+                </div>
+             </div>
+           ) : showPreview ? (
+             <div className="space-y-6">
+                <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex gap-3">
+                   <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                   <div>
+                      <h4 className="text-sm font-bold text-amber-900">Map Verification</h4>
+                      <p className="text-[11px] text-amber-700 leading-relaxed mt-1">
+                        Review how the system interprets your data. Correct mapping is vital for record matching.
+                      </p>
+                   </div>
+                </div>
+                <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm max-h-60 overflow-y-auto">
+                   <table className="w-full text-left text-[10px]">
+                      <tbody className="divide-y divide-slate-50">
+                         {previewData.map((row, i) => {
+                            const mapped = mapSheetToPatient(row);
+                            return (
+                               <tr key={i} className="hover:bg-slate-50/50">
+                                  <td className="p-3 border-r border-slate-50 w-1/2">
+                                     <div className="font-mono text-[9px] text-slate-400">
+                                        {Object.entries(row).slice(0, 3).map(([k, v]) => (
+                                           <div key={k}>{k}: {String(v)}</div>
+                                        ))}
+                                     </div>
+                                  </td>
+                                  <td className="p-3">
+                                     <div className="font-bold text-slate-800">{mapped.n}</div>
+                                     <div className="text-[9px] text-slate-500 font-mono">{mapped.id}</div>
+                                  </td>
+                               </tr>
+                            );
+                         })}
+                      </tbody>
+                   </table>
+                </div>
+                <div className="flex gap-3">
+                   <button onClick={() => setShowPreview(false)} className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-bold text-slate-500">Back</button>
+                   <button onClick={confirmImport} className="flex-[2] py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold">Confirm & Sync</button>
                 </div>
              </div>
            ) : (
@@ -120,9 +169,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({ onClose, onImport, isS
                    />
                    <button 
                      onClick={handleTextImport}
-                     className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-[0.98] transition-all"
+                     disabled={!csvText.trim()}
+                     className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-emerald-700 shadow-xl shadow-emerald-100 active:scale-[0.98] transition-all disabled:opacity-50"
                    >
-                     Process & Import to District Register
+                     Process & Dry Run Migration
                    </button>
                 </div>
              </>

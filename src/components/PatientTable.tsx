@@ -1,9 +1,9 @@
-import React from 'react';
-import { PatientRecord } from '@/src/types';
-import { cn, fmtDate } from '@/src/lib/utils';
-import { calcScore, getRiskCat, getVisitStatus } from '@/src/lib/hrp-logic';
+import React, { useState, useMemo } from 'react';
+import { PatientRecord } from '../types';
+import { cn, fmtDate } from '../lib/utils';
+import { calcScore, getRiskCat, getVisitStatus } from '../lib/hrp-logic';
 import { Badge } from './ui/Cards';
-import { Search, Download, Upload, Phone, Sparkles } from 'lucide-react';
+import { Search, Download, Upload, Phone, Sparkles, RefreshCw, AlertCircle, CheckCircle, Clock, ChevronRight, Filter } from 'lucide-react';
 
 interface TableProps {
   data: PatientRecord[];
@@ -14,15 +14,69 @@ interface TableProps {
 }
 
 export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch, onSync, isSyncing }) => {
+  const [selectedRiskFlag, setSelectedRiskFlag] = useState<string>('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  // Extract all distinct risk flags from the data with counts
+  const riskFlagStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    data.forEach(patient => {
+      if (Array.isArray(patient.r)) {
+        const uniquePatientFlags = new Set(patient.r.map(f => f?.trim()).filter(Boolean));
+        uniquePatientFlags.forEach(flag => {
+          counts[flag] = (counts[flag] || 0) + 1;
+        });
+      }
+    });
+    
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [data]);
+
+  // Filter data based on selected risk flag
+  const filteredRecords = useMemo(() => {
+    setCurrentPage(1); // Reset to first page when filtering
+    if (selectedRiskFlag === 'All') return data;
+    return data.filter(patient => 
+      Array.isArray(patient.r) && patient.r.some(f => f.trim() === selectedRiskFlag)
+    );
+  }, [data, selectedRiskFlag]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredRecords.length / pageSize);
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, currentPage, pageSize]);
+
   return (
     <div className="bg-surface rounded-[28px] border border-outline/30 overflow-hidden shadow-sm animate-in fade-in duration-700">
       <div className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-xl font-bold text-on-surface tracking-tight">District Patients</h2>
-          <p className="text-xs text-on-surface-variant font-medium">Mayiladuthurai Maternal Registry</p>
+          <p className="text-xs text-on-surface-variant font-medium">Mayiladuthurai Maternal Registry {selectedRiskFlag !== 'All' && <span className="text-primary ml-1">• Filtering by {selectedRiskFlag}</span>}</p>
         </div>
         
         <div className="flex flex-wrap items-center gap-4">
+          {/* Risk Flag Filter */}
+          <div className="relative flex items-center bg-white border border-outline/30 rounded-full px-4 py-2 shadow-sm group focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+            <Filter size={16} className="text-on-surface-variant mr-2" />
+            <select 
+              value={selectedRiskFlag}
+              onChange={(e) => setSelectedRiskFlag(e.target.value)}
+              className="bg-transparent text-[13px] font-bold text-on-surface outline-none cursor-pointer pr-4 appearance-none"
+            >
+              <option value="All">All Risk Flags ({data.length})</option>
+              {riskFlagStats.map(stat => (
+                <option key={stat.name} value={stat.name}>
+                  {stat.name} ({stat.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="relative group flex-1 md:flex-none">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors" size={18} />
             <input 
@@ -71,7 +125,7 @@ export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch,
             </tr>
           </thead>
           <tbody className="divide-y divide-outline/5">
-            {data.length === 0 ? (
+            {paginatedRecords.length === 0 ? (
               <tr>
                 <td colSpan={9} className="py-24 text-center">
                    <div className="flex flex-col items-center gap-4">
@@ -86,7 +140,7 @@ export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch,
                 </td>
               </tr>
             ) : (
-              data.map((r, i) => {
+              paginatedRecords.map((r, i) => {
                 const score = calcScore(r.r);
                 const cat = getRiskCat(score);
                 const vs = getVisitStatus(r);
@@ -130,7 +184,7 @@ export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch,
                     <td className="px-6 py-5">
                       {vs ? (
                         <div className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold border inline-flex items-center gap-1", 
-                          vs.label === 'Overdue' ? "bg-red-50 text-red-600 border-red-100" :
+                          vs.label.includes('Overdue') ? "bg-red-50 text-red-600 border-red-100" :
                           vs.label === 'Upcoming' ? "bg-amber-50 text-amber-600 border-amber-100" :
                           "bg-emerald-50 text-emerald-600 border-emerald-100"
                         )}>
@@ -172,17 +226,31 @@ export const PatientTable: React.FC<TableProps> = ({ data, onRowClick, onSearch,
       </div>
       <div className="px-8 py-5 border-t border-outline/10 bg-surface flex items-center justify-between">
         <p className="text-[12px] font-bold text-on-surface-variant uppercase tracking-widest">
-           Showing {data.length} Registered Mothers
+           Showing {Math.min(filteredRecords.length, (currentPage - 1) * pageSize + 1)}-{Math.min(filteredRecords.length, currentPage * pageSize)} of {filteredRecords.length} Mothers
         </p>
-        <div className="flex gap-2">
-           <button className="px-4 py-2 text-xs font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors">Previous</button>
-           <button className="px-4 py-2 text-xs font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors">Next</button>
+        <div className="flex items-center gap-4">
+           <div className="text-xs font-bold text-on-surface-variant">
+             Page {currentPage} of {totalPages || 1}
+           </div>
+           <div className="flex gap-2">
+              <button 
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-4 py-2 text-xs font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <button 
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-4 py-2 text-xs font-bold text-primary hover:bg-primary/5 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+           </div>
         </div>
       </div>
     </div>
   );
 };
 
-const ChevronRight = ({size}: {size: number}) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-);

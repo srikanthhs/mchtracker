@@ -58,15 +58,20 @@ async function startServer() {
     try {
       console.log(`[PROXY_FETCH] Upstream target: ${SHEET_URL}`);
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s for large sheets
+
       const response = await fetch(SHEET_URL, {
         method: 'GET',
         headers: {
           'Accept': 'application/json, text/plain, */*',
-          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Server/1.0)'
+          'User-Agent': 'Mozilla/5.0 (HRP-Tracker-Server/1.1)'
         },
-        redirect: 'follow', // Critically important for Google Scripts
-        signal: AbortSignal.timeout(30000) // Increased to 30s
+        redirect: 'follow',
+        signal: controller.signal
       } as any);
+
+      clearTimeout(timeoutId);
 
       const status = response.status;
       const contentType = response.headers.get('content-type') || '';
@@ -75,7 +80,6 @@ async function startServer() {
       console.log(`[PROXY_UPSTREAM_RESPONSE] Status: ${status}, Type: ${contentType}, Size: ${text.length} bytes`);
 
       if (!response.ok) {
-        console.error(`[PROXY_UPSTREAM_ERROR] Status: ${status}, Body snippet: ${text.substring(0, 200)}`);
         return res.status(status).json({
           error: `Google Script Error ${status}`,
           details: status === 404 
@@ -110,21 +114,26 @@ async function startServer() {
           return res.status(502).json({
             error: 'Apps Script Runtime Error',
             details: 'The script crashed while executing. Check your script logs in Google Cloud Console.',
-            snippet: text.substring(0, 300)
+            snippet: text.substring(0, 500)
           });
         }
 
         return res.status(502).json({
           error: 'Expected JSON, Received HTML',
-          details: 'The target URL returned a web page instead of data. Ensure you are using the Web App Deployment URL.',
+          details: 'The target URL returned a web page instead of data. Ensure you are using the Web App Deployment URL, not the editor URL.',
           snippet: text.substring(0, 200)
         });
       }
 
-      // Fallback
       res.json({ data: text, warning: 'Raw response returned as data' });
 
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        return res.status(504).json({
+          error: 'Upstream Timeout',
+          details: 'The Google Script took too long to respond (limit: 45s). Consider optimizing your script or reducing data size.'
+        });
+      }
       console.error(`[PROXY_CRASH]`, err);
       res.status(500).json({
         error: 'Proxy Internal Failure',
