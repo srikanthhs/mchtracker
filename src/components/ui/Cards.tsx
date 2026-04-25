@@ -17,31 +17,31 @@ export const StatCard: React.FC<CardProps> = ({ icon: Icon, color, bg, val, lbl,
     <div 
       onClick={onClick}
       className={cn(
-        "flex-1 min-w-[120px] bg-white rounded-xl p-3 flex items-center gap-3 shadow-sm cursor-pointer transition-all border-2 border-transparent hover:shadow-md hover:-translate-y-0.5",
-        isActive && "shadow-md -translate-y-0.5"
+        "flex-1 min-w-[160px] bg-surface rounded-[28px] p-5 flex flex-col gap-3 cursor-pointer transition-all border border-outline/30 hover:shadow-md hover:bg-surface-variant/20 group relative overflow-hidden",
+        isActive && "bg-primary-container border-primary/20 shadow-none ring-1 ring-primary/10"
       )}
-      style={isActive ? { borderColor: color, background: bg } : {}}
     >
       <div 
-        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" 
-        style={{ background: isActive ? color : bg }}
+        className={cn(
+          "w-12 h-12 rounded-2xl flex items-center justify-center transition-all",
+          isActive ? "bg-primary text-white" : "bg-surface-variant text-on-surface-variant group-hover:bg-primary/10 group-hover:text-primary"
+        )}
+        style={isActive ? {} : { color }}
       >
-        <Icon size={18} color={isActive ? "#fff" : color} />
+        <Icon size={24} />
       </div>
       <div>
-        <div className="font-sans text-xl font-medium leading-none" style={{ color }}>{val}</div>
-        <div className={cn("text-[11px] text-gray-500 mt-0.5", isActive && "font-medium")} style={isActive ? { color } : {}}>{lbl}</div>
-        {isActive && (
-          <div className="text-[9px] mt-0.5 font-semibold uppercase tracking-wider" style={{ color }}>
-            ● Filtered
-          </div>
-        )}
+        <div className={cn(
+          "text-2xl font-bold tracking-tight mb-0.5",
+          isActive ? "text-on-primary-container" : "text-on-surface"
+        )}>{val}</div>
+        <div className={cn(
+          "text-[12px] font-medium leading-tight",
+          isActive ? "text-on-primary-container/70" : "text-on-surface-variant"
+        )}>{lbl}</div>
       </div>
       {isActive && (
-        <div 
-          className="absolute bottom-[-2px] left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-full" 
-          style={{ background: color }}
-        />
+        <div className="absolute top-3 right-3 w-2 h-2 rounded-full bg-primary animate-pulse" />
       )}
     </div>
   );
@@ -49,7 +49,7 @@ export const StatCard: React.FC<CardProps> = ({ icon: Icon, color, bg, val, lbl,
 
 export const Badge: React.FC<{ children: React.ReactNode, className?: string, style?: React.CSSProperties }> = ({ children, className, style }) => (
   <span 
-    className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap", className)}
+    className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-semibold tracking-tight", className)}
     style={style}
   >
     {children}

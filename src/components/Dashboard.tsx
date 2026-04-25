@@ -43,7 +43,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, announcements, filte
   const blockChartData = blocks.map(b => ({
     name: b,
     count: active.filter(r => r.b === b).length
-  })).slice(0, 8); // top 8 for readability
+  })).sort((a,b) => b.count - a.count).slice(0, 8); 
 
   // Chart Data: Risk distribution
   const riskDist = [
@@ -53,72 +53,83 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, announcements, filte
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      <header>
+        <h2 className="text-3xl font-bold tracking-tight text-on-surface mb-1">District Overview</h2>
+        <p className="text-on-surface-variant font-medium">Real-time health surveillance for Mayiladuthurai Maternal Care</p>
+      </header>
+
       {/* Cards Row */}
-      <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-none">
+      <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-none -mx-4 px-4">
         <StatCard 
-          icon={Users} color="#4f46e5" bg="#f5f3ff" val={data.length} lbl="Total Registry" 
+          icon={Users} color="#1a73e8" bg="#e8f0fe" val={data.length} lbl="Total Registry" 
           isActive={filterMode === ''} onClick={() => onFilterClick('')}
         />
         <StatCard 
-          icon={Baby} color="#10b981" bg="#ecfdf5" val={active.length} lbl="Active Pregnancies" 
+          icon={Baby} color="#188038" bg="#e6f4ea" val={active.length} lbl="Active Pregnancies" 
           isActive={filterMode === 'active'} onClick={() => onFilterClick('active')}
         />
         <StatCard 
-          icon={Activity} color="#ef4444" bg="#fef2f2" val={critical.length} lbl="Critical Risk" 
+          icon={Activity} color="#d93025" bg="#fce8e6" val={critical.length} lbl="Critical Risk" 
           isActive={filterMode === 'crit'} onClick={() => onFilterClick('crit')}
         />
         <StatCard 
-          icon={AlertCircle} color="#f59e0b" bg="#fffbeb" val={high.length} lbl="High Risk" 
+          icon={AlertCircle} color="#e37400" bg="#fef7e0" val={high.length} lbl="High Risk" 
           isActive={filterMode === 'high'} onClick={() => onFilterClick('high')}
         />
         <StatCard 
-          icon={TriangleAlert} color="#ef4444" bg="#fef2f2" val={overdue.length} lbl="Overdue Visit" 
+          icon={TriangleAlert} color="#d93025" bg="#fce8e6" val={overdue.length} lbl="Overdue Visits" 
           isActive={filterMode === 'overdue'} onClick={() => onFilterClick('overdue')}
         />
         <StatCard 
-          icon={CalendarClock} color="#f59e0b" bg="#fffbeb" val={edd15.length} lbl="EDD ≤ 15 Days" 
+          icon={CalendarClock} color="#f29900" bg="#feefc3" val={edd15.length} lbl="EDD ≤ 15 Days" 
           isActive={filterMode === 'edd15'} onClick={() => onFilterClick('edd15')}
         />
       </div>
 
       {/* Visualisation Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Block-wise Breakdown Chart */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-border">
-          <h3 className="text-sm font-semibold text-slate-800 mb-6 flex items-center gap-2 uppercase tracking-wider text-[11px]">
-            <Activity size={16} className="text-primary" strokeWidth={2.5} />
-            Active Cases by Block
-          </h3>
-          <div className="h-[240px] w-full">
+        <div className="bg-surface p-8 rounded-[32px] border border-outline/30 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+              <h3 className="text-lg font-bold text-on-surface tracking-tight flex items-center gap-2">
+                <Activity size={20} className="text-primary" />
+                Active Cases by Block
+              </h3>
+              <div className="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-variant/50 px-2 py-1 rounded-md">Top 8 Blocks</div>
+          </div>
+          <div className="h-[280px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={blockChartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" opacity={0.6} />
-                <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                <YAxis fontSize={10} axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-                <Bar dataKey="count" fill="#4f46e5" radius={[4,4,0,0]} barSize={32} />
+              <BarChart data={blockChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dadce0" opacity={0.4} />
+                <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} tick={{fill: '#5f6368', fontWeight: 500}} dy={10} />
+                <YAxis fontSize={11} axisLine={false} tickLine={false} tick={{fill: '#5f6368', fontWeight: 500}} />
+                <Tooltip cursor={{fill: '#f1f3f4'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
+                <Bar dataKey="count" fill="#1a73e8" radius={[8,8,0,0]} barSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Risk Distribution Chart */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-border">
-          <h3 className="text-sm font-semibold text-slate-800 mb-6 flex items-center gap-2 uppercase tracking-wider text-[11px]">
-            <TriangleAlert size={16} className="text-orange-500" strokeWidth={2.5} />
-            Risk Distribution
-          </h3>
-          <div className="h-[240px] w-full flex items-center">
+        <div className="bg-surface p-8 rounded-[32px] border border-outline/30 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+              <h3 className="text-lg font-bold text-on-surface tracking-tight flex items-center gap-2">
+                <TriangleAlert size={20} className="text-orange-500" />
+                Risk Segmentation
+              </h3>
+              <div className="text-[11px] font-bold text-on-surface-variant uppercase tracking-widest bg-surface-variant/50 px-2 py-1 rounded-md">Percentage Distribution</div>
+          </div>
+          <div className="h-[280px] w-full flex items-center">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={riskDist}
                   cx="50%"
                   cy="50%"
-                  innerRadius={65}
-                  outerRadius={85}
-                  paddingAngle={5}
+                  innerRadius={80}
+                  outerRadius={105}
+                  paddingAngle={8}
                   stroke="none"
                   dataKey="value"
                 >
@@ -127,42 +138,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ data, announcements, filte
                   ))}
                 </Pie>
                 <Tooltip />
-                <Legend iconType="circle" wrapperStyle={{fontSize: '12px', paddingTop: '10px'}} verticalAlign="bottom" />
+                <Legend iconType="circle" wrapperStyle={{fontSize: '13px', fontWeight: 500, color: '#202124'}} verticalAlign="bottom" align="center" />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Announcements / General Content Section */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-border lg:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 uppercase tracking-wider text-[11px]">
-              <Megaphone size={16} className="text-primary" strokeWidth={2.5} />
-              District Announcements & Updates
+        {/* Announcements Section */}
+        <div className="bg-surface p-8 rounded-[32px] border border-outline/30 shadow-sm lg:col-span-2">
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-lg font-bold text-on-surface tracking-tight flex items-center gap-3">
+              <Megaphone size={20} className="text-primary" />
+              District Administrative Updates
             </h3>
-            <Badge className="bg-slate-50 text-slate-500 border-slate-200">Content Collection</Badge>
+            <div className="flex items-center gap-2">
+               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+               <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest uppercase">Live Updates</span>
+            </div>
           </div>
           
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {announcements.length > 0 ? announcements.map((item) => (
-              <div key={item.id} className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 hover:border-primary/20 transition-colors group">
-                <div className="flex justify-between items-start gap-4 mb-2">
-                  <h4 className="font-bold text-slate-800 text-sm group-hover:text-primary transition-colors">{item.title}</h4>
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-medium whitespace-nowrap">
+              <div key={item.id} className="p-6 bg-surface-variant/10 rounded-[24px] border border-outline/20 hover:border-primary/40 transition-all group cursor-pointer hover:shadow-md hover:bg-white">
+                <div className="flex justify-between items-start gap-4 mb-3">
+                  <h4 className="font-bold text-on-surface text-base group-hover:text-primary transition-colors leading-snug">{item.title}</h4>
+                  <div className="flex items-center gap-1.5 text-[11px] text-on-surface-variant font-bold whitespace-nowrap bg-surface px-2 py-1 rounded-full shadow-sm">
                     <Clock size={12} />
                     {item.createdAt?.toDate ? fmtDate(item.createdAt.toDate().toISOString()) : 'Recent'}
                   </div>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{item.content}</p>
-                <div className="mt-3 pt-3 border-t border-slate-200/50 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Posted by: {item.authorName || 'District Admin'}</span>
-                  <button className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline">Read More</button>
+                <p className="text-sm text-on-surface-variant leading-relaxed mb-4 line-clamp-3">{item.content}</p>
+                <div className="flex items-center justify-between mt-auto">
+                  <div className="flex items-center gap-2">
+                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-primary text-[10px] font-bold">DA</div>
+                     <span className="text-[11px] text-on-surface font-bold">Admin</span>
+                  </div>
+                  <button className="text-xs font-bold text-primary hover:underline">Full Details</button>
                 </div>
               </div>
             )) : (
-              <div className="py-12 border-2 border-dashed border-slate-100 rounded-xl text-center">
-                <Clock size={32} className="mx-auto text-slate-200 mb-3" />
-                <p className="text-slate-400 text-xs font-medium">No announcements found. Stay tuned for district updates.</p>
+              <div className="col-span-2 py-16 flex flex-col items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-surface-variant/30 flex items-center justify-center text-on-surface-variant/20 mb-4">
+                   <Megaphone size={32} />
+                </div>
+                <p className="text-on-surface font-bold">No announcements yet</p>
+                <p className="text-on-surface-variant text-sm">Official district notices will appear here.</p>
               </div>
             )}
           </div>

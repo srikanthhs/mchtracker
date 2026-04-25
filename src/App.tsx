@@ -37,6 +37,7 @@ import { UserManagement } from './components/UserManagement';
 import { ImportModal } from './components/ImportModal';
 import { PatientRecord, AppUser, Announcement } from './types';
 import { cn } from './lib/utils';
+import { Badge } from './components/ui/Cards';
 import { getDistrictInsights } from './lib/gemini';
 import { fetchSheetData, mapSheetToPatient } from './services/sheetService';
 import ReactMarkdown from 'react-markdown';
@@ -223,19 +224,25 @@ export default function App() {
   // Handle Sheet Sync
   const handleSheetSync = async (overrideData?: any[]) => {
     if (!currentUser || syncing) return;
+    
+    let actualData: any[] | undefined = undefined;
+    if (Array.isArray(overrideData)) {
+      actualData = overrideData;
+    }
+
     setSyncing(true);
     setSyncProgress({ current: 0, total: 0 });
     setSyncReport(null);
     
     try {
-      let rawData = overrideData;
+      let rawData = actualData;
       if (!rawData) {
         console.log('Fetching raw sheet data...');
         rawData = await fetchSheetData(sheetScriptUrl || undefined);
       }
       
-      if (!rawData || rawData.length === 0) {
-        throw new Error("Google Sheets returned 0 rows. Check script deployment.");
+      if (!rawData || !Array.isArray(rawData) || rawData.length === 0) {
+        throw new Error("Google Sheets returned 0 rows or invalid data format.");
       }
 
       const totalRows = rawData.length;
@@ -412,32 +419,45 @@ export default function App() {
         dbStatus={dbStatus}
         syncing={syncing}
         lastSynced={lastSynced}
-        onSync={handleSheetSync}
+        onSync={() => handleSheetSync()}
         onClose={() => setSidebarCollapsed(true)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Navbar */}
-        <header className="h-16 bg-white border-b border-gray-200 shrink-0 flex items-center justify-between px-4 md:px-6 z-20">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-surface border-b border-outline/20 shrink-0 flex items-center justify-between px-4 md:px-8 z-20">
+          <div className="flex items-center gap-4 flex-1">
             <button 
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 rounded-lg hover:bg-gray-100 md:hidden"
+              className="p-2 rounded-full hover:bg-surface-variant transition-colors"
             >
-              <Menu size={20} />
+              <Menu size={22} className="text-on-surface" />
             </button>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight text-primary flex items-center gap-2">
-                HRP Tracker
-                <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-md uppercase tracking-widest font-bold hidden sm:inline">District</span>
+            <div className="hidden sm:block">
+              <h1 className="text-lg font-bold tracking-tighter text-on-surface flex items-center gap-2">
+                HRP Master
+                <Badge className="bg-primary-container text-on-primary-container">District</Badge>
               </h1>
-              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide hidden sm:block">Mayiladuthurai District · DPH Tamil Nadu</p>
+            </div>
+            
+            {/* Google Style Search Bar */}
+            <div className="flex-1 max-w-2xl mx-auto px-4 hidden lg:block">
+               <div className="relative group">
+                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors" size={18} />
+                 <input 
+                   type="text" 
+                   value={searchQuery}
+                   placeholder="Search maternal records, PICME, or location..."
+                   onChange={(e) => setSearchQuery(e.target.value)}
+                   className="w-full pl-12 pr-6 py-2.5 bg-surface-variant/40 hover:bg-surface-variant/60 focus:bg-white focus:shadow-md border-none rounded-full text-sm transition-all outline-none text-on-surface placeholder:text-on-surface-variant/60"
+                 />
+               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-4">
+          <div className="flex items-center gap-3">
              <div 
-               className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full border border-gray-100 cursor-pointer hover:bg-indigo-50 transition-colors"
+               className="flex items-center gap-2 px-3 py-1.5 bg-surface-variant/40 rounded-full border border-outline/10 cursor-pointer hover:bg-surface-variant transition-colors"
                onClick={async () => {
                  const newName = prompt('Enter your display name:', currentUser.name);
                  if (newName && newName !== currentUser.name) {
@@ -450,18 +470,22 @@ export default function App() {
                  }
                }}
              >
-               <div className="w-2 h-2 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-               <span className="text-xs font-semibold text-slate-700">{currentUser.name}</span>
-               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">({currentUser.role})</span>
+               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                 {currentUser.name.charAt(0)}
+               </div>
+               <div className="hidden md:block text-left">
+                  <p className="text-[11px] font-bold text-on-surface leading-none">{currentUser.name}</p>
+                  <p className="text-[9px] text-on-surface-variant font-medium uppercase tracking-wider">{currentUser.role}</p>
+               </div>
              </div>
              
-             <button className="p-2 rounded-full hover:bg-gray-100 text-gray-400">
+             <button className="p-2 rounded-full hover:bg-surface-variant text-on-surface-variant">
                <Bell size={20} />
              </button>
              
              <button 
                onClick={handleLogout}
-               className="p-2 rounded-full hover:bg-red-50 text-red-400 transition-colors"
+               className="p-2 rounded-full hover:bg-red-50 text-red-500 transition-colors"
              >
                <LogOut size={20} />
              </button>
@@ -781,7 +805,7 @@ function doGet() {
              data={filteredPatients}
              onSearch={setSearchQuery}
              onRowClick={setSelectedPatient}
-             onSync={handleSheetSync}
+             onSync={() => handleSheetSync()}
              isSyncing={syncing}
            />
         </main>
