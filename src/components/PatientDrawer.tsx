@@ -121,7 +121,7 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
 
           {/* Body */}
           <div className="p-6 space-y-8 flex-1">
-            {isEditing ? (
+            {isEditing && canEdit ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex items-center gap-2 text-indigo-600 mb-6 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50">
                   <Edit3 size={16} />
@@ -270,7 +270,7 @@ export const PatientDrawer: React.FC<DrawerProps> = ({ patient, onClose, canEdit
 
           {/* Footer Actions */}
           <div className="sticky bottom-0 p-5 bg-white border-t border-border flex gap-3">
-            {isEditing ? (
+            {isEditing && canEdit ? (
               <>
                 <button 
                   onClick={() => setIsEditing(false)}

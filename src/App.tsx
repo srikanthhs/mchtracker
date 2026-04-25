@@ -27,6 +27,14 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { PatientTable } from './components/PatientTable';
 import { PatientDrawer } from './components/PatientDrawer';
+import { MessagingCentre } from './components/MessagingCentre';
+import { GoogleMsgQueue } from './components/GoogleMsgQueue';
+import { AlertScheduler } from './components/AlertScheduler';
+import { AIInsights } from './components/AIInsights';
+import { ReportGenerator } from './components/ReportGenerator';
+import { DPHReport } from './components/DPHReport';
+import { UserManagement } from './components/UserManagement';
+import { ImportModal } from './components/ImportModal';
 import { PatientRecord, AppUser, Announcement } from './types';
 import { cn } from './lib/utils';
 import { getDistrictInsights } from './lib/gemini';
@@ -74,8 +82,14 @@ export default function App() {
   
   // Insights
   const [showAI, setShowAI] = useState(false);
-  const [aiContent, setAiContent] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
+  const [showSched, setShowSched] = useState(false);
+  const [showMsg, setShowMsg] = useState(false);
+  const [showReports, setShowReports] = useState(false);
+  const [showDPH, setShowDPH] = useState(false);
+  const [showUsers, setShowUsers] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [queueData, setQueueData] = useState<{ recipients: PatientRecord[], message: string } | null>(null);
 
   // 1. Check local session
   // Load initial session and sync auth
@@ -207,15 +221,18 @@ export default function App() {
   };
 
   // Handle Sheet Sync
-  const handleSheetSync = async (silent = false) => {
+  const handleSheetSync = async (overrideData?: any[]) => {
     if (!currentUser || syncing) return;
     setSyncing(true);
     setSyncProgress({ current: 0, total: 0 });
     setSyncReport(null);
     
     try {
-      console.log('Fetching raw sheet data...');
-      const rawData = await fetchSheetData(sheetScriptUrl || undefined);
+      let rawData = overrideData;
+      if (!rawData) {
+        console.log('Fetching raw sheet data...');
+        rawData = await fetchSheetData(sheetScriptUrl || undefined);
+      }
       
       if (!rawData || rawData.length === 0) {
         throw new Error("Google Sheets returned 0 rows. Check script deployment.");
@@ -338,17 +355,6 @@ export default function App() {
     console.log('[SYNC] Auto-sync disabled. User must manually trigger sync to preserve daily quota.');
   }, [currentUser, authReady]);
 
-  // Generate Insights
-  const handleShowAI = async () => {
-    setShowAI(true);
-    if (!aiContent) {
-      setAiLoading(true);
-      const text = await getDistrictInsights(patients);
-      setAiContent(text);
-      setAiLoading(false);
-    }
-  };
-
   // Filtered List
   const filteredPatients = useMemo(() => {
     const queryLower = searchQuery.toLowerCase().trim();
@@ -388,20 +394,25 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg-main overflow-hidden text-slate-900 font-sans">
       <Sidebar 
-        data={patients}
+        data={patients} 
         activeFilter={activeFilter}
         activeBlock={activeBlock}
         activePHC={activePHC}
-        collapsed={sidebarCollapsed}
-        dbStatus={dbStatus}
-        syncing={syncing}
-        lastSynced={lastSynced}
-        onSync={() => handleSheetSync()}
         onFilterChange={(f) => { setActiveFilter(f); setActiveBlock(''); setActivePHC(''); }}
         onBlockChange={(b) => { setActiveBlock(b); setActivePHC(''); }}
         onPHCChange={(b, p) => { setActiveBlock(b); setActivePHC(p); }}
-        onShowAI={handleShowAI}
-        onShowSched={() => {}}
+        onShowAI={() => setShowAI(true)}
+        onShowSched={() => setShowSched(true)}
+        onShowMsg={() => setShowMsg(true)}
+        onShowReports={() => setShowReports(true)}
+        onShowDPH={() => setShowDPH(true)}
+        onShowUsers={() => setShowUsers(true)}
+        collapsed={sidebarCollapsed}
+        userRole={currentUser?.role || 'viewer'}
+        dbStatus={dbStatus}
+        syncing={syncing}
+        lastSynced={lastSynced}
+        onSync={handleSheetSync}
         onClose={() => setSidebarCollapsed(true)}
       />
 
@@ -776,50 +787,77 @@ function doGet() {
         </main>
       </div>
 
-      {/* AI Insights Modal */}
-      {showAI && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-           <motion.div 
-             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-             onClick={() => setShowAI(false)}
-           />
-           <motion.div 
-             initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-             className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
-           >
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-purple-50/50">
-                 <div className="flex items-center gap-2 text-purple-600 font-bold tracking-tight">
-                    <Sparkles size={20} />
-                    AI District Insights
-                 </div>
-                 <button onClick={() => setShowAI(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-              </div>
-              <div className="p-8 max-h-[70vh] overflow-y-auto prose prose-sm prose-purple">
-                 {aiLoading ? (
-                   <div className="flex flex-col items-center justify-center py-12 gap-4">
-                      <div className="w-10 h-10 border-4 border-purple-100 border-t-purple-600 rounded-full animate-spin" />
-                      <p className="text-sm font-medium text-gray-500 animate-pulse">Running Gemini analysis...</p>
-                   </div>
-                 ) : (
-                   <div className="markdown-body text-gray-700 leading-relaxed">
-                     <ReactMarkdown>{aiContent}</ReactMarkdown>
-                   </div>
-                 )}
-              </div>
-              <div className="p-4 bg-gray-50 text-[10px] text-gray-400 text-center flex items-center justify-center gap-2">
-                <TrendingUp size={12} />
-                Powered by Gemini 2.0 Flash SDK · Realtime District Analytics
-              </div>
-           </motion.div>
-        </div>
-      )}
+       {/* New Modals */}
+       {showAI && <AIInsights patients={patients} onClose={() => setShowAI(false)} />}
+       
+       {showMsg && (
+         <MessagingCentre 
+           patients={patients} 
+           onClose={() => setShowMsg(false)} 
+           onQueue={(recipients, message) => {
+             setQueueData({ recipients, message });
+             setShowQueue(true);
+             setShowMsg(false);
+           }}
+         />
+       )}
 
-      {/* Detail Drawer */}
+       {showQueue && queueData && (
+         <GoogleMsgQueue 
+           recipients={queueData.recipients}
+           message={queueData.message}
+           onClose={() => setShowQueue(false)}
+         />
+       )}
+
+       {showSched && (
+         <AlertScheduler 
+           patients={patients} 
+           onClose={() => setShowSched(false)}
+           openGoogleMsgQueue={(recipients, message) => {
+             setQueueData({ recipients, message });
+             setShowQueue(true);
+           }}
+         />
+       )}
+
+       {showReports && (
+         <ReportGenerator 
+           patients={patients} 
+           onClose={() => setShowReports(false)} 
+         />
+       )}
+
+       {showDPH && (
+         <DPHReport 
+           patients={patients} 
+           onClose={() => setShowDPH(false)} 
+         />
+       )}
+
+       {showUsers && currentUser && (
+         <UserManagement 
+           currentUser={currentUser} 
+           onClose={() => setShowUsers(false)} 
+         />
+       )}
+
+        {showImport && (
+          <ImportModal 
+            onClose={() => setShowImport(false)}
+            onImport={async (rawData) => {
+              await handleSheetSync(rawData);
+            }}
+            isSyncing={syncing}
+            syncProgress={syncProgress}
+          />
+        )}
+
+       {/* Detail Drawer */}
       <PatientDrawer 
         patient={selectedPatient}
         onClose={() => setSelectedPatient(null)}
-        canEdit={currentUser.role !== 'viewer'}
+        canEdit={currentUser.role === 'admin' || currentUser.role === 'dph_officer'}
       />
     </div>
   );
